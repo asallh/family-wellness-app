@@ -169,7 +169,6 @@ class AlertDelegate extends ScreenDelegate {
             return;
         }
         _done = true;
-        cancelPending();
         var s = getState();
         s.ack(_view.event, "seen");
         _view.onHide();
