@@ -57,7 +57,13 @@ python3 tools/feeder.py
 
 **It's demo-ready the moment it opens.** Mom and Son both start with every field ticked: normal vitals, and about 500 m apart (Mom north of Son). **Keep sending every 5 s** is on for both, so both watches show live data with no setup, and neither goes stale even without its simulator running. Heart rate drifts by a beat or two on each send so it looks live, but never crosses an alert threshold. Start it with `--manual` to begin with nothing ticked or sent.
 
-Pick **Mom** or **Son** and move a slider (heart rate, SpO₂, temperature, altitude, battery, heading) or type a position. The field ticks itself and goes to the server straight away. Ticked fields are pinned on the server, so the watch's own sensor readings can't overwrite them. Untick a field to hand it back to the watch's real readings. The other watch sees the fake values, and health alerts fire as usual.
+**Real watch for one member?** Untick that member under **Mock** (or start with `--mock son` to fake only Son). The feeder then stops sending for them and releases anything it had pinned, so the real watch's sensors show through. Their sliders grey out, but you can still send an SOS, a fall or a check-in as them. Tick **Mock** again to go back to fake data.
+
+```bash
+python3 tools/feeder.py --mock son
+```
+
+Pick who to **Edit** (**Mom** or **Son**) and move a slider (heart rate, SpO₂, temperature, altitude, battery, heading) or type a position. The field ticks itself and goes to the server straight away. Ticked fields are pinned on the server, so the watch's own sensor readings can't overwrite them. Untick a field to hand it back to the watch's real readings. The other watch sees the fake values, and health alerts fire as usual.
 
 - **Presets:** one click for normal, high HR (165), low HR (35) or low SpO₂ (85).
 - **Move 100 m N/S/E/W:** walks the member around, so distances and arrows change.

@@ -3,6 +3,7 @@
 
     python3 tools/feeder.py                          # local server
     python3 tools/feeder.py http://<laptop-ip>:3000  # another laptop's server
+    python3 tools/feeder.py --mock son               # only fake Son (Mom is a real watch)
     python3 tools/feeder.py --manual                 # start with nothing sent
 
 Ready for a demo as soon as it opens: Mom and Son both start with every field
@@ -10,6 +11,11 @@ ticked (normal vitals, ~500 m apart) and "Keep sending" on, so both are fed
 every 5 s with no setup. Heart rate drifts by a beat or two on each send so it
 looks live (never across an alert threshold). --manual starts the old way, with
 nothing ticked or sent.
+
+The "Mock" boxes (or --mock) pick whose data is faked. Untick a member that's
+wearing a real watch: the feeder stops sending for them and releases anything
+it had pinned, so the real sensors show through. You can still send events
+(SOS, fall, check-in) as them.
 
 Moving a slider ticks that field and sends it at once. Ticked fields are
 pinned on the server (POST /debug/override/:id), so the watch's own sensor
@@ -142,11 +148,15 @@ class MemberFeed:
 
 
 class Feeder(tk.Tk):
-    def __init__(self, server, auto=True):
+    def __init__(self, server, auto=True, mock=None):
         super().__init__()
         self.title("Family Wellness feeder")
         self.resizable(False, False)
-        self.feeds = {mid: MemberFeed(mid, auto) for mid, _ in MEMBERS}
+        mock = set(ALL_MEMBERS if mock is None else mock)
+        self.feeds = {mid: MemberFeed(mid, auto and mid in mock) for mid, _ in MEMBERS}
+        # Whose data this feeder fakes. A member with a real watch is unticked.
+        self.mocked = {mid: tk.BooleanVar(value=mid in mock) for mid, _ in MEMBERS}
+        self.mock_widgets = []  # widgets that only make sense for a mocked member
         self.results = queue.Queue()
         self.loading = False  # true while copying a feed into the widgets
         self.edit_job = None  # pending debounced send after a slider edit
@@ -160,7 +170,8 @@ class Feeder(tk.Tk):
         self.conn_text = tk.StringVar(value="Connecting...")
 
         self.server = tk.StringVar(value=server)
-        self.member = tk.StringVar(value="son")
+        first_mocked = next((mid for mid, _ in MEMBERS if mid in mock), "son")
+        self.member = tk.StringVar(value=first_mocked)
         self.status = tk.StringVar(value="")
         self.vars = {}
         self.pin_vars = {}
@@ -178,33 +189,47 @@ class Feeder(tk.Tk):
 
         top = ttk.Frame(self)
         top.grid(row=0, column=0, sticky="ew", **pad)
-        ttk.Label(top, text="Server").pack(side="left")
-        server_entry = ttk.Entry(top, textvariable=self.server, width=32)
+        line1 = ttk.Frame(top)
+        line1.pack(fill="x")
+        ttk.Label(line1, text="Server").pack(side="left")
+        server_entry = ttk.Entry(line1, textvariable=self.server, width=32)
         server_entry.pack(side="left", padx=4)
         server_entry.bind("<Return>", lambda _e: self._server_changed(tidy_entry=True))
         server_entry.bind("<FocusOut>", lambda _e: self._server_changed(tidy_entry=True))
-        ttk.Label(top, text="Member").pack(side="left", padx=(12, 2))
+        line2 = ttk.Frame(top)
+        line2.pack(fill="x", pady=(4, 0))
+        ttk.Label(line2, text="Mock").pack(side="left")
         for mid, name in MEMBERS:
-            ttk.Radiobutton(top, text=name, value=mid, variable=self.member,
+            ttk.Checkbutton(line2, text=name, variable=self.mocked[mid],
+                            command=lambda m=mid: self._on_mock_toggle(m)).pack(side="left")
+        ttk.Label(line2, text="(untick anyone wearing a real watch)", foreground="#777").pack(side="left", padx=(2, 12))
+        ttk.Label(line2, text="Edit").pack(side="left")
+        for mid, name in MEMBERS:
+            ttk.Radiobutton(line2, text=name, value=mid, variable=self.member,
                             command=self._load_member).pack(side="left")
 
-        vitals = ttk.LabelFrame(self, text="Data feed (ticked = pinned on the server)")
+        self.vitals_frame = vitals = ttk.LabelFrame(self, text="Data feed (ticked = pinned on the server)")
         vitals.grid(row=1, column=0, sticky="ew", **pad)
         for row, (key, label, lo, hi, step, _) in enumerate(FIELDS):
             pin = tk.BooleanVar()
             self.pin_vars[key] = pin
-            ttk.Checkbutton(vitals, variable=pin, command=self._on_pin_toggle).grid(row=row, column=0)
+            box = ttk.Checkbutton(vitals, variable=pin, command=self._on_pin_toggle)
+            box.grid(row=row, column=0)
             ttk.Label(vitals, text=label, width=16).grid(row=row, column=1, sticky="w")
             var = tk.DoubleVar()
             self.vars[key] = var
-            tk.Scale(vitals, variable=var, from_=lo, to=hi, resolution=step, orient="horizontal",
-                     length=260, showvalue=True,
-                     command=lambda _v, k=key: self._on_slider(k)).grid(row=row, column=2)
+            scale = tk.Scale(vitals, variable=var, from_=lo, to=hi, resolution=step, orient="horizontal",
+                             length=260, showvalue=True,
+                             command=lambda _v, k=key: self._on_slider(k))
+            scale.grid(row=row, column=2)
+            self.mock_widgets += [box, scale]
 
         pos = ttk.LabelFrame(self, text="Position")
         pos.grid(row=2, column=0, sticky="ew", **pad)
         self.pin_vars["pos"] = tk.BooleanVar()
-        ttk.Checkbutton(pos, variable=self.pin_vars["pos"], command=self._on_pin_toggle).grid(row=0, column=0)
+        pos_box = ttk.Checkbutton(pos, variable=self.pin_vars["pos"], command=self._on_pin_toggle)
+        pos_box.grid(row=0, column=0)
+        self.mock_widgets.append(pos_box)
         for col, key in ((1, "lat"), (3, "lon")):
             ttk.Label(pos, text=key).grid(row=0, column=col, sticky="e")
             var = tk.StringVar()
@@ -213,26 +238,33 @@ class Feeder(tk.Tk):
             entry.grid(row=0, column=col + 1, padx=2)
             entry.bind("<FocusOut>", lambda _e: self._on_position_typed())
             entry.bind("<Return>", lambda _e: self._on_position_typed())
+            self.mock_widgets.append(entry)
         nudge = ttk.Frame(pos)
         nudge.grid(row=1, column=0, columnspan=5, pady=2)
         ttk.Label(nudge, text="Move 100 m:").pack(side="left")
         for text, north, east in (("N", 100, 0), ("S", -100, 0), ("E", 0, 100), ("W", 0, -100)):
-            ttk.Button(nudge, text=text, width=3,
-                       command=lambda n=north, e=east: self._nudge(n, e)).pack(side="left")
+            b = ttk.Button(nudge, text=text, width=3, command=lambda n=north, e=east: self._nudge(n, e))
+            b.pack(side="left")
+            self.mock_widgets.append(b)
 
         presets = ttk.Frame(self)
         presets.grid(row=3, column=0, sticky="ew", **pad)
         ttk.Label(presets, text="Presets:").pack(side="left")
         for name in PRESETS:
-            ttk.Button(presets, text=name, command=lambda n=name: self._preset(n)).pack(side="left", padx=1)
+            b = ttk.Button(presets, text=name, command=lambda n=name: self._preset(n))
+            b.pack(side="left", padx=1)
+            self.mock_widgets.append(b)
 
         send = ttk.Frame(self)
         send.grid(row=4, column=0, sticky="ew", **pad)
         self.stream_var = tk.BooleanVar()
-        ttk.Checkbutton(send, text="Keep sending every 5 s", variable=self.stream_var,
-                        command=self._on_stream).pack(side="left")
-        ttk.Button(send, text="Send now", command=self._send_current).pack(side="left", padx=4)
-        ttk.Button(send, text="Release all", command=self._release).pack(side="left")
+        for w, kw in (
+            (ttk.Checkbutton(send, text="Keep sending every 5 s", variable=self.stream_var, command=self._on_stream), {}),
+            (ttk.Button(send, text="Send now", command=self._send_current), {"padx": 4}),
+            (ttk.Button(send, text="Release all", command=self._release), {}),
+        ):
+            w.pack(side="left", **kw)
+            self.mock_widgets.append(w)
 
         actions = ttk.LabelFrame(self, text="Events (as the selected member)")
         actions.grid(row=5, column=0, sticky="ew", **pad)
@@ -277,7 +309,38 @@ class Feeder(tk.Tk):
         self.target_box["values"] = others
         if self.target.get() not in others:
             self.target.set(others[0])
+        mid = self.member.get()
+        name = feed_name(mid)
+        mocked = self.mocked[mid].get()
+        for w in self.mock_widgets:
+            set_enabled(w, mocked)
+        self.vitals_frame.configure(text=f"{name}'s data feed (ticked = pinned on the server)" if mocked
+                                    else f"{name}: not mocked, real watch data (tick Mock {name} to fake it)")
         self.loading = False
+
+    def _on_mock_toggle(self, mid):
+        """Start or stop faking a member's data."""
+        feed = self.feeds[mid]
+        if self.mocked[mid].get():
+            # Back to the demo values, ticked and streaming.
+            fresh = MemberFeed(mid, auto=True)
+            feed.values, feed.pinned, feed.stream = fresh.values, fresh.pinned, True
+            self.member.set(mid)
+            self._load_member()
+            self._send(mid)
+            self.status.set(f"{feed_name(mid)}: mocked, sending every 5 s")
+        else:
+            for key in feed.pinned:
+                feed.pinned[key] = False
+            feed.stream = False
+            self._load_member()
+            self._clear_pins(mid, f"{feed_name(mid)}: not mocked, the real watch's data shows now")
+
+    def _clear_pins(self, mid, label):
+        if self.can_pin is False:
+            self.status.set(label)
+            return
+        self._request("POST", f"/debug/override/{mid}", {"clear": True}, label)
 
     def _save_widgets(self):
         feed = self._feed()
@@ -521,8 +584,13 @@ class Feeder(tk.Tk):
         pins = pins if isinstance(pins, dict) else {}
         self._show_family(family, pins)
         if first:
-            # New server (or first contact): give it the values we already hold.
+            # New server (or first contact): give it the values we already hold,
+            # and drop any old pins on members we're not mocking (a real watch
+            # wearer shouldn't be stuck with values from an earlier feeder run).
             self._resend_all("Connected")
+            for mid, var in self.mocked.items():
+                if not var.get() and pins.get(mid):
+                    self._clear_pins(mid, f"{feed_name(mid)}: cleared old pins, showing the real watch")
             return
         # Resync members that lost their values: the server restarted, someone
         # reset it, or the member went stale while we hold values for it.
@@ -547,6 +615,13 @@ class Feeder(tk.Tk):
             ))
 
 
+def set_enabled(widget, on):
+    if isinstance(widget, tk.Scale):
+        widget.configure(state="normal" if on else "disabled")
+    else:
+        widget.state(["!disabled"] if on else ["disabled"])
+
+
 def feed_name(mid):
     return dict(MEMBERS).get(mid, mid)
 
@@ -560,7 +635,13 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Fake Mom's and Son's vitals and position.")
     parser.add_argument("server", nargs="?", default="http://localhost:3000",
                         help="server URL (default http://localhost:3000; http:// is optional)")
+    parser.add_argument("--mock", default=",".join(ALL_MEMBERS),
+                        help="whose data to fake, comma-separated: mom,son (default), son, mom or none")
     parser.add_argument("--manual", action="store_true",
-                        help="start with nothing ticked or sent, instead of feeding Mom and Son")
+                        help="start with nothing ticked or sent, instead of feeding the mocked members")
     args = parser.parse_args()
-    Feeder(args.server, auto=not args.manual).mainloop()
+    mock = [] if args.mock.strip().lower() == "none" else [m.strip().lower() for m in args.mock.split(",") if m.strip()]
+    unknown = [m for m in mock if m not in ALL_MEMBERS]
+    if unknown:
+        parser.error(f"unknown member(s) for --mock: {', '.join(unknown)} (choose from {', '.join(ALL_MEMBERS)})")
+    Feeder(args.server, auto=not args.manual, mock=mock).mainloop()
