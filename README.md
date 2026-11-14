@@ -1,74 +1,40 @@
 # Family Wellness
 
-A two-way family safety network that lives on Garmin watches. Every member sees every other member's live heart rate, location and direction. Anyone can send "Are you OK?" to anyone. An SOS or fall on any watch alerts the whole family, closest person first. Parents keep an eye on kids, and kids keep an eye on parents and grandparents.
+A family safety network on Garmin watches. Every member sees everyone's heart rate and location, anyone can send "Are you OK?" to anyone, and an SOS or fall alerts the whole family, closest person first.
+
+The two watches are **Mom** and **Son**. **Dad** and **Grandpa** are faked by the server so the family looks full.
 
 **The full plan is in [PLAN.md](PLAN.md):** the architecture, the API contract, who owns what, the timeline and the demo script.
 
-> **Status:** only the Connect IQ template exists so far. The `/server` folder, `source/Config.mc` and the in-app menus described below are still to be built. The commands are the ones we'll use once they are.
+## Run it
 
-## Two ways to run it
-
-| | **Local mode** (day-to-day dev) | **Shared mode** (testing together, and the demo) |
-|---|---|---|
-| Server | Each person runs their own on `localhost:3000` | **One** person runs it and shares it through ngrok |
-| Watch app points at | `http://localhost:3000` | `https://<team-domain>.ngrok-free.app` |
-| Who's in the family | Your simulator + seeded Mom and Grandpa (driven with `demo.sh`) | Both laptops' simulators (Dad + Kid) + seeded Mom and Grandpa |
-| Two-way features between laptops | ❌ Each local server is its own separate family | ✅ |
-
-**Important:** watches only see each other if they talk to the *same* server. Local mode is for building and testing alone. Whenever the two laptops' simulators need to see each other, switch both to shared mode.
-
-We're building and demoing **on simulators only**. The physical fēnix 7 is a stretch goal (see the end of this file).
-
-> **One simulator per Mac.** The Connect IQ simulator can't run twice on the same machine. We tested this, so don't try to work around it. To see two watches talk to each other, use **two machines** (one simulator each) pointed at the same server.
-
-## One-time setup (everyone)
-
-1. **VS Code + the Monkey C extension** (by Garmin).
-2. **Connect IQ SDK 9.x**, installed through the Connect IQ SDK Manager. In the SDK Manager's **Devices** tab, download **fēnix® 7 Pro**, the device we simulate. (The manifest also lists `fenix7` for the stretch goal. Ignore it unless you're doing that, and always pick `fenix7pro` when VS Code asks for a device.)
-3. **A developer key** to sign builds. In VS Code, run **"Monkey C: Generate a Developer Key"**. Keep it outside the repo; `.gitignore` blocks key files anyway.
-4. **Node.js 20+** for the server.
-5. Optional, for running the CLI commands below: put the SDK's `bin` folder on your `PATH`.
-
-   ```bash
-   export PATH="$HOME/Library/Application Support/Garmin/ConnectIQ/Sdks/$(ls "$HOME/Library/Application Support/Garmin/ConnectIQ/Sdks" | tail -1)/bin:$PATH"
-   ```
-
-## Local mode: run your own instance
-
-**1. Start the server.** It keeps everything in memory, so a restart is a clean slate.
+You need the Connect IQ SDK (with the `fenix7pro` device), a developer key set in VS Code, and Node 20+.
 
 ```bash
-cd server && npm install && npm start
-```
-
-It listens on `http://localhost:3000` and seeds a fake "Mom". Check it's up:
-
-```bash
-curl http://localhost:3000/family
-```
-
-**2. Allow plain HTTP in the simulator.** Open the simulator. In its **Settings** menu, untick **"Use Device HTTPS Requirements"**, so it can call `http://localhost`.
-
-**3. Run the watch app in the simulator.** In VS Code, open the repo folder and press **F5** (Run → Start Debugging), then pick `fenix7pro`. Or use the CLI:
-
-```bash
-connectiq
+./start.sh mom
 ```
 
 ```bash
-monkeyc -f monkey.jungle -d fenix7pro -o bin/app.prg -y /path/to/developer_key
+./start.sh son
 ```
 
+`start.sh` does the following:
+1. Starts the server on `localhost:3000` if it isn't running. It stops when you press Ctrl-C.
+2. Builds the watch app with that persona and server baked in.
+3. Opens the simulator and runs the app.
+
+The watch shows who it is and which server it's on, and every request and response prints to the terminal.
+
+**First time only:** in the simulator, untick **Settings → Use Device HTTPS Requirements**. Otherwise every request fails with `-1001`.
+
+**On the watch:** press START or MENU for the menu. **Run self-test** checks every endpoint and prints `PASS`/`FAIL`. The other items send one request each.
+
+Only one simulator runs per Mac. Run `./start.sh mom` on one laptop and `./start.sh son` on another, both pointed at the same server: `./start.sh son http://<other-laptop>:3000`.
+
+### Fake events from the terminal
+
 ```bash
-monkeydo bin/app.prg fenix7pro
-```
-
-**4. In the watch app:** choose who you are (usually Dad or Kid; Mom and Grandpa are seeded on the server) on first launch. Leave **Menu → Server** on **Local** (the default).
-
-**5. Fake the rest of the family** while you work alone. `server/demo.sh` sends events as any member:
-
-```bash
-./server/demo.sh checkin kid dad
+./server/demo.sh checkin grandpa mom
 ```
 
 ```bash
@@ -76,52 +42,61 @@ monkeydo bin/app.prg fenix7pro
 ```
 
 ```bash
+./server/demo.sh hr son 165
+```
+
+```bash
 ./server/demo.sh reset
 ```
 
-Set sensor values for *your* watch in the simulator's **Simulation** menu: heart rate, GPS position, heading, or play back a FIT/GPX file.
+Run `./server/demo.sh` with no arguments for every command.
 
-## Shared mode: everyone on one network
+## API
 
-**On the laptop hosting the server** (one person only):
+The base URL is `http://localhost:3000`, and all bodies are JSON. Members are `mom`, `son`, `dad` and `grandpa`.
+
+| Method | Path | Body | Returns |
+|---|---|---|---|
+| POST | `/members/:id/telemetry` | `{hr, spo2, temp, lat, lon, heading, alt, battery}`, all optional | `{ok}` |
+| GET | `/family` | | Everyone, including you: `[{id, name, hr, spo2, temp, alt, battery, heading, lat, lon, status, lastSeen, seeded}]` |
+| GET | `/members/:id/inbox` | | Unanswered events: `[{eventId, type, from, fromName, lat, lon, distanceM, rank, response, reason, value, ageSec, expiresInSec}]` |
+| POST | `/members/:id/sos` | `{type: "manual" or "fall", lat?, lon?}` | `{ok, eventId, notified}` |
+| POST | `/members/:id/checkin` | `{from}` asks `:id` "Are you OK?" | `{ok, eventId}` |
+| POST | `/events/:eventId/ack` | `{by, response: "ok", "help" or "seen"}` | `{ok}` |
+| POST | `/debug/reset` | | `{ok}` clears all events and statuses |
+
+**Event types in the inbox:**
+
+| `type` | Meaning |
+|---|---|
+| `checkin` | Someone asks "Are you OK?". `expiresInSec` counts down the 30 s you have to answer. |
+| `checkin_reply` | The answer to your check-in. `response` is `ok` or `help`. |
+| `sos` | Someone needs help. `reason` is null for the SOS button, or `checkin_help` / `checkin_timeout`. |
+| `fall` | A fall was detected. |
+| `health` | Vitals crossed a threshold. `reason` is `hr_high`, `hr_low` or `spo2_low`, and `value` is the reading. |
+
+**Rules:**
+- **Health alerts:** HR above 150 or below 40, or SpO₂ below 90, alerts everyone else once per crossing.
+- **Check-ins:** answering `help`, or not answering within 30 s, turns into an SOS to the whole family.
+- **Closest member:** `rank: 1` marks the closest live watch, so show "(you're closest)".
+- **Status** is one of:
+  - `sos`: raised an SOS in the last 2 minutes
+  - `stale`: no telemetry for 30 s
+  - `alert`: a vital is past a threshold
+  - `ok`
+- **`lastSeen`** is seconds since the last telemetry.
+- **The inbox repeats events until they're acked.** Remember the `eventId`s you've already shown.
+- **Errors** are JSON, `{ok: false, error}`: 404 for an unknown member or event, 400 for bad input.
+
+## Server only
 
 ```bash
-cd server && npm start
+cd server && npm install && npm start
 ```
 
 ```bash
-ngrok http --url=<team-domain>.ngrok-free.app 3000
+cd server && npm test
 ```
-
-Use ngrok's **free static domain** (one per ngrok account, under Domains in the ngrok dashboard), so the URL never changes and nobody needs to rebuild. Put that domain in `SHARED_URL` in `source/Config.mc`, and commit it once.
-
-**On both laptops' simulators:** in the watch app, set **Menu → Server** to **Shared**, and pick a different identity on each (Dad on one, Kid on the other). Two devices claiming the same member will overwrite each other.
-
-**Quick pairing on the same Wi-Fi (no ngrok):** for testing between two machines, the second laptop can talk straight to the first one's server. The server listens on all network interfaces.
-
-1. On the hosting laptop, run `npm start` in `server/`, then find its local IP:
-
-   ```bash
-   ipconfig getifaddr en0
-   ```
-
-2. On the other laptop, check it can reach the server:
-
-   ```bash
-   curl http://<host-ip>:3000/family
-   ```
-
-3. Temporarily set `SHARED_URL` in `source/Config.mc` to `http://<host-ip>:3000`. Don't commit this change. Keep "Use Device HTTPS Requirements" unticked in the simulator.
-
-If the venue Wi-Fi blocks laptop-to-laptop traffic, use ngrok as described above.
-
-## Repo layout
-
-| Path | What | Owner |
-|---|---|---|
-| `manifest.xml`, `resources/`, `source/` (views) | Watch app screens (Monkey C) | Person A |
-| `source/` (`FamilyState`, networking, sensors, `Config.mc`) | Watch app data layer + fall detection | Person C |
-| `server/` | Node + Express API (in-memory) and `demo.sh` | Person B |
 
 ## FAQ
 
