@@ -14,7 +14,10 @@ import Toybox.WatchUi;
 class Tester {
     var myId as String;
     var useShared as Boolean;
+    // True when ./start.sh baked in the identity and server for this build.
+    var launched as Boolean;
     var polling as Boolean = false;
+    private var _serverUrl as String;
     var status as String = "Press START for menu";
     var detail as String = "";
     var api as Api;
@@ -30,15 +33,30 @@ class Tester {
     private var _testCheckin as Dictionary? = null;
 
     function initialize() {
-        var savedId = Application.Storage.getValue("myId");
-        myId = savedId instanceof String ? savedId : "dad";
         useShared = Application.Storage.getValue("useShared") == true;
-        api = new Api(serverUrl());
-        System.println("API tester ready. I am '" + myId + "', server " + serverUrl());
+        var launchId = Config.launchIdentity();
+        var launchUrl = Config.launchServerUrl();
+        launched = launchId != null;
+
+        // start.sh's choice wins; otherwise use what was picked in the menu.
+        var savedId = Application.Storage.getValue("myId");
+        myId = launchId != null ? launchId : (savedId instanceof String ? savedId : "mom");
+        _serverUrl = launchUrl != null ? launchUrl : (useShared ? Config.SHARED_URL : Config.LOCAL_URL);
+
+        api = new Api(_serverUrl);
+        System.println("API tester ready. I am '" + myId + "', server " + _serverUrl
+            + (launched ? " (set by start.sh)" : " (set in the menu)"));
     }
 
     function serverUrl() as String {
-        return useShared ? Config.SHARED_URL : Config.LOCAL_URL;
+        return _serverUrl;
+    }
+
+    // The server without the http(s):// prefix, for the screen.
+    function serverHost() as String {
+        var url = _serverUrl;
+        var at = url.find("://");
+        return at == null ? url : url.substring(at + 3, url.length()) as String;
     }
 
     // ---- settings -----------------------------------------------------------
@@ -54,8 +72,10 @@ class Tester {
     function toggleServer() as Void {
         useShared = !useShared;
         Application.Storage.setValue("useShared", useShared);
-        api.setBaseUrl(serverUrl());
-        show("Server: " + (useShared ? "shared" : "local"), serverUrl());
+        _serverUrl = useShared ? Config.SHARED_URL : Config.LOCAL_URL;
+        api.setBaseUrl(_serverUrl);
+        System.println("Server switched to " + _serverUrl);
+        show("Server: " + (useShared ? "shared" : "local"), serverHost());
     }
 
     function togglePolling() as Void {
@@ -196,7 +216,7 @@ class Tester {
             api.get("/members/" + myId + "/inbox", method(:onSelfTest));
         } else if (_testStep == 3) {
             if (_testCheckin == null) {
-                System.println("SELF-TEST answer check-in: SKIP (none waiting; try `demo.sh checkin kid " + myId + "` first)");
+                System.println("SELF-TEST answer check-in: SKIP (none waiting; try `server/demo.sh checkin grandpa " + myId + "` first)");
                 _testStep++;
                 selfTestNext();
                 return;
@@ -204,7 +224,7 @@ class Tester {
             var id = _testCheckin["eventId"] as String;
             api.post("/events/" + id + "/ack", { "by" => myId, "response" => "ok" }, method(:onSelfTest));
         } else if (_testStep == 4) {
-            var target = myId.equals("mom") ? "grandpa" : "mom";
+            var target = myId.equals("dad") ? "grandpa" : "dad";
             api.post("/members/" + target + "/checkin", { "from" => myId }, method(:onSelfTest));
         } else {
             var summary = _testPassed + "/" + _testRun + " passed";

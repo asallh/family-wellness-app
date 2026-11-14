@@ -25,8 +25,9 @@ class family_wellnessView extends WatchUi.View {
         dc.setColor(Graphics.COLOR_WHITE, Graphics.COLOR_TRANSPARENT);
         dc.drawText(cx, h * 0.17, Graphics.FONT_SMALL, "I am " + t.myId, Graphics.TEXT_JUSTIFY_CENTER);
 
+        // Which server this watch is talking to.
         dc.setColor(Graphics.COLOR_LT_GRAY, Graphics.COLOR_TRANSPARENT);
-        var mode = (t.useShared ? "shared" : "local") + (t.polling ? " | polling" : "");
+        var mode = fit(t.serverHost(), 24) + (t.polling ? " | poll" : "");
         dc.drawText(cx, h * 0.29, Graphics.FONT_XTINY, mode, Graphics.TEXT_JUSTIFY_CENTER);
 
         dc.setColor(Graphics.COLOR_YELLOW, Graphics.COLOR_TRANSPARENT);

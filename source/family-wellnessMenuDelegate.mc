@@ -17,7 +17,7 @@ function openTesterMenu() as Void {
     menu.addItem(new WatchUi.MenuItem("SOS", "POST sos manual", :sos, null));
     menu.addItem(new WatchUi.MenuItem("Simulate fall", "POST sos fall", :fall, null));
     menu.addItem(new WatchUi.MenuItem("I am", t.myId, :identity, null));
-    menu.addItem(new WatchUi.MenuItem("Server", t.useShared ? "shared" : "local", :server, null));
+    menu.addItem(new WatchUi.MenuItem("Server", t.serverHost(), :server, null));
     menu.addItem(new WatchUi.MenuItem("Reset server", "POST /debug/reset", :reset, null));
     WatchUi.pushView(menu, new family_wellnessMenuDelegate(), WatchUi.SLIDE_UP);
 }
