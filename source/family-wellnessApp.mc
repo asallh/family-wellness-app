@@ -7,6 +7,7 @@ import Toybox.WatchUi;
 class family_wellnessApp extends Application.AppBase {
 
     var tester as Tester?;
+    var family as FamilyState?;
 
     function initialize() {
         AppBase.initialize();
@@ -18,6 +19,8 @@ class family_wellnessApp extends Application.AppBase {
         Position.enableLocationEvents(Position.LOCATION_CONTINUOUS, method(:onPosition));
         Sensor.setEnabledSensors([Sensor.SENSOR_HEARTRATE] as Array<Sensor.SensorType>);
         tester = new Tester();
+        family = new FamilyState(tester);
+        family.start();
         if (Config.AUTO_SELF_TEST) {
             tester.runSelfTest();
         }
@@ -29,6 +32,9 @@ class family_wellnessApp extends Application.AppBase {
         if (tester != null) {
             tester.stop();
         }
+        if (family != null) {
+            family.stop();
+        }
     }
 
     // Telemetry reads Position.getInfo(), so nothing to do here.
@@ -37,7 +43,8 @@ class family_wellnessApp extends Application.AppBase {
 
     // Return the initial view of your application here
     function getInitialView() as [Views] or [Views, InputDelegates] {
-        return [ new family_wellnessView(), new family_wellnessDelegate() ];
+        var list = new FamilyListView();
+        return [ list, new FamilyListDelegate(list) ];
     }
 
 }
@@ -48,4 +55,8 @@ function getApp() as family_wellnessApp {
 
 function getTester() as Tester {
     return getApp().tester as Tester;
+}
+
+function getState() as FamilyState {
+    return getApp().family as FamilyState;
 }
