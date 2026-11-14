@@ -1,146 +1,167 @@
 # Family Wellness: Hackathon Plan
 
-**Team:** 3 people · **Time:** 6 hours · **Demo:** Connect IQ simulator + React Native (Expo) app
+**Team:** 3 people · **Time:** 6 hours · **Demo:** two Connect IQ simulators (one per laptop) talking through a small server
 
 ## The pitch (one line)
 
-A family safety network on Garmin watches. Everyone shares live heart rate, location and direction. A fall or SOS from any watch alerts the family, closest member first, and parents can send an "Are you OK?" check-in that the watch has to answer.
+A family safety network that lives entirely on Garmin watches. Each watch shares live heart rate, location and direction with the family. A fall or SOS on one watch makes the others vibrate and point an arrow toward the person in trouble. A parent can send "Are you OK?" from their own watch, and the child's watch has to answer.
 
 ## Architecture
 
 ```
- ┌──────────────────┐   POST telemetry / poll inbox   ┌──────────────────┐   GET family / send check-in  ┌──────────────────┐
- │ Garmin watch app │ ───────── every 5 s ──────────▶ │  Node + Express  │ ◀──────── every 3 s ────────── │ Expo RN app      │
- │ (Monkey C, sim)  │ ◀──────── events ────────────── │  in-memory store │ ──────── family + alerts ────▶ │ (parent's phone) │
- └──────────────────┘                                 └──────────────────┘                                └──────────────────┘
-        ▲                                                     ▲
-        │ Connect IQ simulator = the "real" watch(es)         │ tools/family_sim.py = virtual watches for the
-                                                              │ other family members (same API as the watch)
+ ┌───────────────────────────┐                                  ┌───────────────────────────┐
+ │ Laptop 1: CIQ simulator   │   POST telemetry, poll inbox     │ Laptop 2: CIQ simulator   │
+ │ Watch app as "dad"        │ ──────── every 5 s ───────┐  ┌── │ Watch app as "kid"        │
+ │ (role: parent)            │ ◀─── events ───────────┐  │  │   │ (role: child)             │
+ └───────────────────────────┘                        │  ▼  ▼   └───────────────────────────┘
+                                                ┌─────────────────────┐
+                                                │ Node + Express      │
+                                                │ in-memory store     │
+                                                │ exposed via ngrok   │
+                                                └─────────────────────┘
 ```
 
-## Family Simulator panel (to build: `tools/family_sim.py`)
+**Key decisions:**
 
-We're demoing on simulators only, so we'll build a small desktop app that plays the family members who don't have a Connect IQ simulator running. It acts as a "virtual watch" and talks to the server through the same API as the real watch app, so the server and phone app can't tell the difference.
+- **No phone app.** In the simulator, `Communications.makeWebRequest` goes straight from the Mac to the internet. On real watches it goes through the official Garmin Connect app on each person's phone, which we don't build. Every feature in this plan fits on the watch.
+- **The server is the network.** Watches can't talk to each other directly, so every message goes through the server. It's small: no auth, no database.
+- **One simulator per laptop.** We tested this. The Connect IQ simulator only runs one instance per Mac (it always takes port 1234), so the two watches run on two laptops.
+- **One app, two identities.** Both watches run the *same build*. Each laptop sets `memberId` and `role` in the app's settings, so nobody edits code to switch between "dad" and "kid".
+- **No extra simulator tool.** The Connect IQ simulator's *Simulation* menu already sets heart rate, GPS position and heading, and can play back a FIT/GPX file. The watch app's own debug menu item covers falls. The Tkinter panel idea is scrapped.
+- **Two fake members on the server** (`mom`, `grandpa`) with fixed locations and plausible HR. They're seeded in code with no UI. This gives the family list more than two people and makes "closest member" routing mean something. Optional: drop it if time is short.
 
-**Tech:** Python 3 + Tkinter, standard library only (`urllib` for HTTP), so nobody needs to `pip install` anything. Network calls go on a background thread so the window never freezes, and the server URL comes from a `--url` flag or the `FAMILY_API` env var. Estimate: about 45 minutes.
+## Watch app settings
 
-```bash
-python3 tools/family_sim.py --url https://<your-ngrok>.ngrok-free.app
-```
+Declared in `resources/properties.xml` and `resources/settings.xml`, and read with `Application.Properties.getValue(...)`. Set them per laptop in the simulator's app settings editor (File menu → edit application properties/settings).
 
-**What it should do:**
-
-- **Pick a member** (Dad / Mom / Kid / Grandpa) and tick *Simulate this member*. By default the panel drives Mom and Grandpa. Kid is the real CIQ simulator and Dad is the phone app.
-- **Vitals:** sliders for target HR, SpO₂ and skin temperature, plus presets: Resting / Walking / Exercise / **Panic spike (185)** / **Low HR (38)**. HR eases toward the target with noise, so the graphs look real.
-- **Behaviour:** *Walking* moves the member in a loop on the map and changes their heading, which exercises the compass arrow. *Go offline* stops sending so the member turns "stale". *Auto-answer check-ins*.
-- **Emergencies:** **Trigger FALL** posts `/sos {type:"fall"}`, stops walking and raises HR. **Emergency SOS** posts `/sos {type:"manual"}`.
-- **Incoming events:** shows check-ins and SOS alerts that reach simulated members, with buttons to answer a check-in **OK** or **HELP**. Ignore a check-in to demo the 30 s escalation.
-- Every 2 s, each simulated member POSTs telemetry and polls its inbox, exactly like the watch app does.
-
-Note that the panel **cannot control the Connect IQ simulator itself**. For the real watch, set HR, GPS and heading in the CIQ simulator's *Simulation* menu, or play back a FIT/GPX file. Use the watch's own debug "Simulate fall" menu item to show fall detection on the watch.
-
-**Why a small Node server and not Firebase:** "notify the closest member" and the check-in timeout are server logic. With no auth and an in-memory store, everyone can be hitting a working API in about 20 minutes. Expose it with `ngrok http 3000` so the phone running Expo Go and every laptop's simulator use the same URL.
-
-**What a real device would need** (say this to judges, but don't build it): on a real watch, traffic goes watch → Garmin Connect app on the phone → internet. Continuous sharing while the app is closed needs a Connect IQ background service, and those can only wake every 5 minutes or more. The demo runs the app in the foreground.
-
-## Sensors used (for the bonus points)
-
-| Sensor | API | Feature |
+| Key | Example | Purpose |
 |---|---|---|
-| Heart rate | `Sensor.Info.heartRate` | Live HR, high/low HR alerts |
-| GPS | `Position.enableLocationEvents` | Family map, closest-member routing |
-| Compass / magnetometer | `Sensor.Info.heading` | Arrow pointing toward a family member |
-| Accelerometer | `Sensor.registerSensorDataListener` (25 Hz) | Fall detection |
-| Barometer / altimeter | `Sensor.Info.pressure`, `altitude` | Sudden altitude drop as a second fall signal, shown on card |
-| Pulse Ox | `Sensor.Info.oxygenSaturation` | SpO₂ on member card, low-SpO₂ alert |
-| Temperature | `Sensor.Info.temperature` | Shown on member card |
-| Vibration | `Attention.vibrate` | Alerts and check-in prompts on the watch |
+| `memberId` | `dad` / `kid` | Who this watch is |
+| `role` | `parent` / `child` | Parents get the "Check on…" menu |
+| `serverUrl` | `https://xxxx.ngrok-free.app` | Shared server address |
 
-The simulator can feed all of these (Simulation → Sensor Data / Activity Data, or play back a FIT/GPX file for GPS and HR).
+## Features (all on the watch)
+
+| Feature | What the user sees | Sensors |
+|---|---|---|
+| **Family list** | Every member with ♥ HR, distance, and a status dot (ok / alert / stale / SOS) | HR, GPS |
+| **Direction to a member** | Pick a member to get a big arrow pointing at them, with HR and distance underneath | GPS + compass |
+| **Emergency SOS** | Menu item or hold a button: *every other* watch vibrates with "Kid needs help, 350 m" and an arrow to them. The closest member gets "(you're closest)". | GPS, vibration |
+| **Fall detection** | Free-fall then impact, followed by "Did you fall?" with a 15 s countdown. If nobody cancels, an SOS is sent automatically. | Accelerometer, barometer |
+| **"Are you OK?" check-in** | A parent picks "Check on Kid". The kid's watch vibrates with an OK / HELP prompt. The reply shows on the parent's watch. No reply in 30 s escalates to an SOS. | Vibration |
+| **Health alerts** | When a member's HR goes above 150 or below 40, or SpO₂ drops below 90, the other watches get a vibration and an alert. | HR, Pulse Ox |
+| **Vitals on the detail screen** | HR, SpO₂, skin temperature, altitude, battery | HR, Pulse Ox, temperature, barometer |
+
+### Sensors used (for the bonus points)
+
+| Sensor | API | Used for |
+|---|---|---|
+| Heart rate | `Sensor.Info.heartRate` | Live HR, HR alerts |
+| GPS | `Position.enableLocationEvents` | Distance, closest-member routing, direction arrow |
+| Compass / magnetometer | `Sensor.Info.heading` | Direction arrow |
+| Accelerometer | `Sensor.registerSensorDataListener` (25 Hz) | Fall detection |
+| Barometer / altimeter | `Sensor.Info.pressure`, `altitude` | Second fall signal (sudden drop), shown on detail screen |
+| Pulse Ox | `Sensor.Info.oxygenSaturation` | Low-SpO₂ alert |
+| Temperature | `Sensor.Info.temperature` | Shown on detail screen |
+| Vibration | `Attention.vibrate` | All alerts and prompts |
 
 ## API contract (agree on this first, 0:00–0:20)
 
-Base URL: the ngrok URL. Family is hardcoded as `family1`. Member ids and display names are hardcoded on the server: `dad` (Dad), `mom` (Mom), `kid` (Kid), `grandpa` (Grandpa). All bodies are JSON. **Don't rename fields without telling the team**, because the watch, the app and `family_sim.py` all depend on them.
+Base URL: the ngrok URL. Member ids and names are hardcoded on the server: `dad` (Dad), `kid` (Kid), plus the seeded `mom` (Mom) and `grandpa` (Grandpa). All bodies are JSON. **Don't rename fields without telling the team.** Keep responses small, because watch memory is tight.
 
-| Method | Path | Body / returns | Who calls it |
-|---|---|---|---|
-| POST | `/members/:id/telemetry` | `{hr, spo2, temp, lat, lon, heading, alt, battery}` → `{ok}` | Watch |
-| GET | `/family` | `[{id, name, hr, spo2, lat, lon, heading, status, lastSeen}]` | Watch + app |
-| GET | `/members/:id/inbox` | `[{eventId, type: "checkin"\|"checkin_reply"\|"sos"\|"fall", from, lat, lon, distanceM, rank}]`, **unacked events only** | Watch + app + sim |
-| POST | `/members/:id/sos` | `{type: "manual"\|"fall", lat, lon}` | Watch + sim |
-| POST | `/members/:id/checkin` | `{from}` (parent asks "Are you OK?") | App |
-| POST | `/events/:eventId/ack` | `{by, response: "ok"\|"help"}`. Removes it from `by`'s inbox. A check-in ack goes back to the asker as a `checkin_reply` event. | Watch + app + sim |
-| POST | `/debug/reset` | Clears all events and statuses between demo runs | Anyone |
+| Method | Path | Body / returns |
+|---|---|---|
+| POST | `/members/:id/telemetry` | `{hr, spo2, temp, lat, lon, heading, alt, battery}` → `{ok}` |
+| GET | `/family` | `[{id, name, hr, spo2, temp, alt, battery, lat, lon, status, lastSeen}]` |
+| GET | `/members/:id/inbox` | `[{eventId, type, from, fromName, lat, lon, distanceM, rank, response}]`, **unacked events only** |
+| POST | `/members/:id/sos` | `{type: "manual"\|"fall", lat, lon}` |
+| POST | `/members/:id/checkin` | `{from}`. `:id` is who's being checked on. |
+| POST | `/events/:eventId/ack` | `{by, response: "ok"\|"help"\|"seen"}` |
+| POST | `/debug/reset` | Clears events and statuses between demo runs |
 
-Clients poll the inbox and de-duplicate by `eventId`, so the server can return the same unacked event on every poll.
+Event `type` values: `sos`, `fall`, `checkin`, `checkin_reply`, `health` (HR/SpO₂ alert).
 
 Server rules:
-- **SOS / fall:** compute haversine distance from the person in trouble to every other member, sort ascending, and add the event to every inbox with `distanceM` and a `rank`. The closest member gets `rank: 1` and a stronger alert.
-- **Check-in:** if there is no ack within 30 s, escalate it into an SOS automatically.
+- **SOS / fall:** compute the haversine distance from the sender to every other member, sort ascending, and put the event in every inbox with `distanceM` and `rank` (1 = closest).
+- **Check-in:** goes into the target's inbox. An `ok`/`help` ack puts a `checkin_reply` in the asker's inbox, and a `help` reply also triggers an SOS. With no ack after 30 s, escalate to an SOS from the target.
+- **Health:** when telemetry crosses a threshold (HR > 150 or < 40, SpO₂ < 90), set status `alert` and send a `health` event to everyone else. Only send it once per crossing, not on every poll.
 - **Status:** `ok` / `alert` / `stale` (no telemetry for 30 s or more) / `sos`.
-- **HR alerts:** HR above 150 at rest or below 40 sets status to `alert`. Keep the thresholds hardcoded.
+- **Inbox:** returns unacked events. The watch remembers `eventId`s it has already shown, so repeated polls don't re-vibrate.
 
 ## Who does what
 
-### Person A: Watch app (Monkey C), the critical path
-1. Manifest: add permissions `Communications`, `Positioning`, `Sensor`, `SensorHistory`. Add a couple of simulator products (e.g. `fenix7pro`, `venu3`).
-2. `TelemetryService`: a `Timer` every 5 s that reads sensors and calls `Communications.makeWebRequest` to POST telemetry, then GETs the inbox.
-3. **Main view:** a list of family members showing name, ♥ HR, distance, and a status dot.
-4. **Member detail view:** a large compass arrow. The arrow angle is `bearing(me → them) − myHeading`, with HR and distance underneath. This covers the "general direction" idea.
-5. **Alert view:** vibrate, then show "Mom fell, 120 m away (you're closest)" with Ack.
-6. **Check-in view:** "Are you OK?" with buttons ✅ OK / 🆘 Help, on a 30 s countdown.
-7. **SOS:** a menu item, or holding the Back button, posts `/sos`.
+Two people work on the watch app, so split it along a clear seam. **Person C owns the data layer, and Person A owns the screens.** Agree on this interface in the first 20 minutes:
 
-### Person B: Backend + simulator panel, then fall detection
-1. 0:20–1:30: Express server in `/server` with the endpoints above, an in-memory `Map`, and ngrok. Share the URL in the group chat right away.
-2. 1:30–2:15: build the **Family Simulator panel** (`tools/family_sim.py`, see the section above) and use it to test SOS, closest-member and check-in escalation without waiting on the watch or the app. Include a log pane that shows every request failure.
-3. 2:15 onward: pair with Person A on **fall detection** in Monkey C:
+```
+FamilyState (singleton, Person C)
+  members        : Array of member dictionaries from /family
+  me             : this watch's latest telemetry
+  pendingEvents  : events not yet shown
+  onChange       : callback the views use to WatchUi.requestUpdate()
+  sendSos(type), sendCheckin(targetId), ack(eventId, response)
+```
+
+### Person A: Watch screens (Monkey C)
+1. **Family list** (main view): name, ♥ HR, distance, status dot.
+2. **Member detail:** compass arrow drawn with `dc.fillPolygon`. Angle = `bearing(me → them) − myHeading`, with vitals underneath.
+3. **Alert view:** pushed on any `sos`/`fall`/`health` event. Shows who, the distance, "(you're closest)", and an arrow to them. Has an Acknowledge button.
+4. **Check-in prompt** (child): "Are you OK?" with OK / HELP buttons and a 30 s countdown. **Check-in reply** (parent): "Kid says OK ✅".
+5. **Menus:** SOS, "Check on…" (only when `role == parent`), "Simulate fall" (debug).
+6. Keep the UI to `dc.drawText` and simple shapes. No custom fonts or layouts.
+
+### Person B: Server, then integration
+1. 0:20–1:15: Express server in `/server`, an in-memory `Map`, every endpoint above, and the seeded `mom`/`grandpa`. Run it with ngrok and share the URL right away.
+2. Test every endpoint with `curl` so the watch team can trust it. Keep a `server/demo.sh` with `curl` one-liners for resetting state and triggering events, as a backup if a watch misbehaves on stage.
+3. 1:15 onward: check-in escalation timer, health threshold events, and stale detection. Then become the integration tester: drive both simulators and log what breaks.
+
+### Person C: Watch data layer + sensors (Monkey C)
+1. Manifest: add permissions `Communications`, `Positioning`, `Sensor`, `SensorHistory`. Add `properties.xml` and `settings.xml` for `memberId`, `role` and `serverUrl`.
+2. `FamilyState` + a `Timer` every 5 s that reads sensors, POSTs telemetry, GETs `/family`, then GETs the inbox. **Chain the requests one after another** (start the next in the previous callback), because the watch only allows a few requests in flight at once.
+3. Event dispatch: new inbox events trigger `Attention.vibrate` and hand off to Person A's alert or check-in views.
+4. **Fall detection** (from about 2:30):
    - Accelerometer at 25 Hz. Magnitude = √(x²+y²+z²) in milli-g.
    - Rule: free fall (< 400 mg) followed within 1 s by an impact (> 2500 mg), then roughly still for 2 s. Optionally confirm with an altitude drop from the barometer.
-   - On a trigger, show a "Did you fall?" screen with a 15 s countdown, then auto-POST `/sos {type:"fall"}`.
-   - **Simulator caveat:** the simulator can't easily stream a realistic fall, so add a debug menu item, "Simulate fall", that pushes a recorded fall sample array through the *same* detector function. That way the algorithm is real and the demo is reliable.
-
-### Person C: React Native app (Expo)
-1. `npx create-expo-app family-app`, run in Expo Go on a phone.
-2. **Family screen:** `react-native-maps` with a pin per member, plus cards below showing HR, SpO₂, temperature, battery, status color and last seen. Poll `/family` every 3 s.
-3. **Member screen:** live HR line (a simple sparkline of the last ~60 points kept in app state), the "Send check-in" button, and a "Navigate" button that opens Maps.
-4. **Alerts:** poll `/members/dad/inbox`. On an SOS or fall, show a full-screen red alert with distance, rank and a map, plus a local notification via `expo-notifications`. Skip remote push because it needs extra setup.
-5. Polish the demo UI last: app name, icon, colors.
+   - A trigger opens "Did you fall?" with a 15 s countdown, then calls `sendSos("fall")`.
+   - **Simulator caveat:** the simulator can't stream a realistic fall, so "Simulate fall" pushes a recorded sample array through the *same* detector function. The algorithm is real and the demo is reliable.
 
 ## Timeline
 
 | Time | Milestone |
 |---|---|
-| 0:00–0:20 | Agree on the API contract and ids. Repo layout: the CIQ watch app stays at the repo root (moving it breaks the VS Code Monkey C setup), `/server`, `/app`, `/tools`. Everyone's toolchain runs. |
-| 0:20–1:30 | Server up on ngrok. Watch posts HR and GPS. App shows a list from `/family` (test with `curl` POSTs until the panel exists). **First end-to-end data flow.** |
-| 1:30–3:00 | Watch: family list + compass arrow. App: map + cards. Server: SOS/closest logic and check-in escalation. Simulator panel built, so Mom and Grandpa appear on the map. |
-| 3:00–4:15 | SOS, check-in round trip, fall detection + "Simulate fall". |
-| 4:15–5:00 | **Integration only.** Run the full demo script end to end and fix whatever breaks. |
+| 0:00–0:20 | Agree on the API contract and the `FamilyState` interface. Repo layout: watch app at the repo root (moving it breaks the VS Code Monkey C setup), `/server`. The simulator runs on both laptops. |
+| 0:20–1:30 | Server up on ngrok. One watch posts telemetry and shows the family list. **First end-to-end data flow.** |
+| 1:30–2:30 | **Both laptops running.** Dad and Kid see each other's HR and distance. Member detail with the arrow. |
+| 2:30–4:00 | SOS + alert view, check-in round trip, health alerts, fall detection + "Simulate fall". |
+| 4:00–5:00 | **Integration only.** Run the full demo script on both laptops and fix whatever breaks. |
 | 5:00 | **Feature freeze.** |
 | 5:00–5:40 | Record a backup demo video, then make 3–4 slides (problem → demo → sensors used → what's next). |
 | 5:40–6:00 | Rehearse twice. |
 
+Priority order if time runs short: telemetry → family list → SOS + alert → check-in → direction arrow → health alerts → fall detection → seeded members.
+
 ## Demo script (about 3 minutes)
 
-Have three windows on screen: the Connect IQ simulator (Kid), the Family Simulator panel (Mom + Grandpa), and the phone app (Dad), mirrored or on a projector camera. Hit `POST /debug/reset` before you start.
+Two laptops side by side: Laptop 1 is **Dad's watch** (parent) and Laptop 2 is **Kid's watch** (child). Run `server/demo.sh reset` before you start.
 
-1. "My grandpa lives alone, and my little brother walks home from school." Then the problem.
-2. The phone shows the family map: Kid (the CIQ simulator), plus Mom and Grandpa (the panel) walking, with live HR.
-3. On the watch, open Mom. The arrow points toward her while you rotate the simulated heading.
-4. In the panel, hit **Panic spike** on Grandpa. His card on the phone turns amber as HR climbs past 150.
-5. Parent taps **"Are you OK?"** on the phone. The kid's watch vibrates, they tap ✅, and the phone shows a green check.
-6. Send a check-in to Grandpa and **don't answer** it in the panel. After 30 s it escalates and the whole family is alerted.
-7. In the panel, hit **Trigger FALL** on Grandpa. The phone goes red with "Grandpa fell, Mom is closest (400 m)", and the panel's event list shows Mom got the rank-1 alert.
-8. Finally, show the *real* fall detector: "Simulate fall" on the watch counts down 15 s, then sends the alert.
-7. Close on the sensor list (HR, GPS, compass, accelerometer, barometer, SpO₂, temperature) and what comes next: background service, real push, auth, geofences ("arrived at school").
+1. "My little brother walks home from school, and my grandpa lives alone." Then the problem.
+2. Dad's watch shows the family list: Kid, Mom and Grandpa with live HR and distance.
+3. Open Kid on Dad's watch. Change Kid's GPS position and Dad's heading in the simulators, and the arrow swings toward Kid.
+4. On Kid's laptop, raise the simulated heart rate above 150. Dad's watch vibrates with "Kid's heart rate is high (162)".
+5. Dad picks **Check on Kid**. Kid's watch vibrates, Kid taps **OK**, and Dad's watch shows "Kid says OK ✅".
+6. Check on Kid again and **don't answer**. After 30 s it escalates, and Dad's watch gets the SOS with an arrow to Kid.
+7. On Kid's watch, choose **Simulate fall**. The 15 s countdown runs out and Dad's watch shows "Kid may have fallen, 350 m (you're closest)".
+8. Close on the sensor list (HR, GPS, compass, accelerometer, barometer, SpO₂, temperature) and what comes next.
 
-## Out of scope (cut on purpose)
+## Out of scope (say these as "next steps")
 
-Auth and real accounts, a database, remote push notifications, the background service, multiple families, and privacy controls. Mention each one under "next steps" instead of building it.
+- A phone companion app with a map, real push notifications, and calling or texting emergency services
+- A background service so sharing continues while the app is closed. Connect IQ background services can only wake every 5 minutes or more.
+- Auth, real accounts, a database, multiple families, privacy controls
+- Geofences ("arrived at school")
 
 ## Risks and mitigations
 
-- **Simulator HTTPS/network quirks:** use the ngrok HTTPS URL, and test the first `makeWebRequest` in the first hour.
-- **Monkey C learning curve:** keep the watch UI to plain `dc.drawText` and `dc.fillPolygon` (for the arrow). No custom fonts or layouts.
-- **Running out of time:** priority order is telemetry → family list → app map → SOS → check-in → compass arrow → fall detection.
-- **Live demo fails:** keep the backup video. The simulator panel can trigger every alert even if the watch app misbehaves.
+- **Simulator networking:** use the ngrok HTTPS URL, and get the first `makeWebRequest` working within the first hour. If ngrok's free-tier warning page breaks JSON responses, send the `ngrok-skip-browser-warning` header.
+- **Two people in one Monkey C codebase:** stick to the `FamilyState` seam. Person A doesn't make web requests, and Person C doesn't draw. Commit small and often.
+- **Monkey C learning curve:** plain `dc.drawText` and `dc.fillPolygon`, no layouts.
+- **Live demo fails:** keep the backup video, and use `server/demo.sh` to trigger any alert from a terminal.
