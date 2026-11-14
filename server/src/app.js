@@ -46,6 +46,10 @@ export function createApp({ store = new FamilyStore(), log = console.log, verbos
     res.json(store.ack(req.params.eventId, by, response));
   });
 
+  // Data feeder (tools/feeder.py): pin fake vitals/position for a member.
+  app.get("/debug/override", (_req, res) => res.json(store.overridesSnapshot()));
+  app.post("/debug/override/:id", (req, res) => res.json(store.setOverride(req.params.id, req.body)));
+
   app.post("/debug/reset", (_req, res) => {
     store.reset();
     res.json({ ok: true });

@@ -31,6 +31,22 @@ The watch shows who it is and which server it's on, and every request and respon
 
 Only one simulator runs per Mac. Run `./start.sh mom` on one laptop and `./start.sh son` on another, both pointed at the same server: `./start.sh son http://<other-laptop>:3000`.
 
+### Fake data from a window (instead of the simulator's Activity menu)
+
+```bash
+python3 tools/feeder.py
+```
+
+Pick **Mom** or **Son**, tick the fields you want to fake (heart rate, SpO₂, temperature, altitude, battery, heading, position) and move the sliders. Ticked fields are pinned on the server, so the watch's own sensor readings can't overwrite them. Unticked fields go back to the watch's real readings. The other watch sees the fake values, and health alerts fire as usual.
+
+- **Presets:** one click for normal, high HR (165), low HR (35) or low SpO₂ (85).
+- **Move 100 m N/S/E/W:** walks the member around, so distances and arrows change.
+- **Keep sending every 5 s:** sends the values over and over. This also keeps a member with no simulator running from going stale, so one Mac can play both Mom and Son.
+- **Events:** send an SOS, a fall or a check-in as the selected member, or reset the server.
+- The table at the bottom shows what the server has, and which fields are pinned.
+
+Use `python3 tools/feeder.py http://<other-laptop>:3000` for a shared server. It only needs Python's standard library, which includes Tkinter.
+
 ### Fake events from the terminal
 
 ```bash
@@ -63,7 +79,9 @@ The base URL is `http://localhost:3000`, and all bodies are JSON. Members are `m
 | POST | `/members/:id/sos` | `{type: "manual" or "fall", lat?, lon?}` | `{ok, eventId, notified}` |
 | POST | `/members/:id/checkin` | `{from}` asks `:id` "Are you OK?" | `{ok, eventId}` |
 | POST | `/events/:eventId/ack` | `{by, response: "ok", "help" or "seen"}` | `{ok}` |
-| POST | `/debug/reset` | | `{ok}` clears all events and statuses |
+| POST | `/debug/override/:id` | `{hr, spo2, temp, lat, lon, heading, alt, battery}`: a number pins that field, `null` releases it, `{clear: true}` releases all | `{ok, pinned}` |
+| GET | `/debug/override` | | Pinned fields per member: `{son: {hr: 165}}` |
+| POST | `/debug/reset` | | `{ok}` clears all events, statuses and pinned fields |
 
 **Event types in the inbox:**
 

@@ -235,3 +235,41 @@ test("reset clears events and statuses but keeps watch telemetry", async () => {
   assert.equal(son.status, "ok");
   assert.equal(son.hr, 90);
 });
+
+test("feeder override pins fields the watch can't overwrite, and fires health alerts", async () => {
+  await bothWatchesOnline();
+  let r = await post("/debug/override/son", { hr: 165, lat: 38.87, lon: -94.8 });
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.body.pinned, { hr: 165, lat: 38.87, lon: -94.8 });
+  assert.equal((await member("son")).status, "alert");
+  assert.equal((await inbox("mom")).filter((e) => e.type === "health").length, 1);
+
+  // The watch keeps reporting real sensors: pinned fields stay, others update.
+  await post("/members/son/telemetry", { hr: 80, spo2: 91, ...SON });
+  let son = await member("son");
+  assert.equal(son.hr, 165);
+  assert.equal(son.lat, 38.87);
+  assert.equal(son.spo2, 91);
+  assert.deepEqual((await get("/debug/override")).body, { son: { hr: 165, lat: 38.87, lon: -94.8 } });
+
+  // null releases one field; the watch's next report takes over again.
+  await post("/debug/override/son", { hr: null });
+  await post("/members/son/telemetry", { hr: 82 });
+  assert.equal((await member("son")).hr, 82);
+
+  // clear releases everything; reset also clears pins.
+  await post("/debug/override/son", { clear: true });
+  assert.deepEqual((await get("/debug/override")).body, {});
+  await post("/debug/override/mom", { spo2: 85 });
+  await post("/debug/reset");
+  assert.deepEqual((await get("/debug/override")).body, {});
+});
+
+test("feeder keeps a watch with no simulator live, and rejects bad input", async () => {
+  assert.equal((await member("son")).status, "stale");
+  await post("/debug/override/son", { hr: 75, spo2: 98, lat: 38.86, lon: -94.8 });
+  assert.equal((await member("son")).status, "ok");
+  assert.equal((await post("/debug/override/son", { hr: "fast" })).status, 400);
+  assert.equal((await post("/debug/override/mom", { lat: 38.8 })).status, 400);
+  assert.equal((await post("/debug/override/nobody", { hr: 70 })).status, 404);
+});

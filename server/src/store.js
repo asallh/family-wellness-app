@@ -74,10 +74,11 @@ export class FamilyStore {
 
   // ---- state lifecycle ------------------------------------------------------
 
-  /** Clears events, check-ins, SOS and alert state. Live watches keep their last telemetry. */
+  /** Clears events, check-ins, SOS, alert state and feeder pins. Live watches keep their last telemetry. */
   reset() {
     this.events = new Map(); // eventId -> event (with per-recipient delivery state)
     this.checkins = new Map(); // eventId -> { target, asker, deadline, resolved }
+    this.overrides = new Map(); // memberId -> { field: value } pinned by the data feeder
     for (const m of this.members.values()) {
       m.sosUntil = 0;
       m.breaches = { hrHigh: false, hrLow: false, spo2Low: false };
@@ -185,8 +186,10 @@ export class FamilyStore {
     }
     // Watches without a GPS fix can report (180, 180); keep the last real position instead.
     const ignorePosition = !validPosition(body.lat, body.lon);
+    const pinned = this.overrides.get(id) ?? {};
     for (const key of TELEMETRY_FIELDS) {
       if (!(key in body)) continue;
+      if (key in pinned) continue; // the data feeder owns this field
       const v = body[key];
       if (v === null) continue; // a sensor with no reading keeps its last value
       if (typeof v !== "number" || !Number.isFinite(v)) throw new HttpError(400, `"${key}" must be a number or null`);
@@ -214,6 +217,50 @@ export class FamilyStore {
       }
       m.breaches[key] = now;
     }
+  }
+
+  // ---- data feeder overrides --------------------------------------------------
+
+  /**
+   * Pins fake values for a member (from tools/feeder.py). A number pins that
+   * field, so the watch's own telemetry can't overwrite it; null releases it.
+   * Pinned values are applied right away as telemetry, so health alerts fire
+   * and a member with no watch running stays live while the feeder sends.
+   */
+  setOverride(id, body) {
+    const m = this.getMember(id);
+    if (body == null || typeof body !== "object" || Array.isArray(body)) {
+      throw new HttpError(400, "Body must be a JSON object");
+    }
+    const pins = { ...(this.overrides.get(id) ?? {}) };
+    if (body.clear === true) for (const k of Object.keys(pins)) delete pins[k];
+    for (const key of TELEMETRY_FIELDS) {
+      if (!(key in body)) continue;
+      const v = body[key];
+      if (v === null) {
+        delete pins[key];
+      } else if (typeof v !== "number" || !Number.isFinite(v)) {
+        throw new HttpError(400, `"${key}" must be a number or null`);
+      } else {
+        pins[key] = v;
+      }
+    }
+    if (("lat" in pins) !== ("lon" in pins)) throw new HttpError(400, "pin lat and lon together");
+    if ("lat" in pins && !validPosition(pins.lat, pins.lon)) throw new HttpError(400, "lat/lon out of range");
+    if (Object.keys(pins).length === 0) this.overrides.delete(id);
+    else this.overrides.set(id, pins);
+
+    // Apply the pins as a telemetry report from this member.
+    for (const [k, v] of Object.entries(pins)) m[k] = v;
+    if (m.seed && "lat" in pins) m.positionOverridden = true;
+    // Any feeder send counts as hearing from the member, except releasing everything.
+    if (!m.seed && body.clear !== true) m.lastSeen = this.now();
+    this.checkHealth(m);
+    return { ok: true, pinned: pins };
+  }
+
+  overridesSnapshot() {
+    return Object.fromEntries(this.overrides);
   }
 
   // ---- events -----------------------------------------------------------------
