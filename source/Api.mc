@@ -31,6 +31,13 @@ class Api {
         enqueue(true, path, body, onDone);
     }
 
+    // A POST that goes ahead of queued polls (SOS, check-ins, answers), so the
+    // wearer isn't kept waiting behind routine traffic.
+    function postNow(path as String, body as Dictionary, onDone as Method?) as Void {
+        _queue = [{ :isPost => true, :path => path, :body => body, :onDone => onDone }].addAll(_queue) as Array<Dictionary>;
+        sendNext();
+    }
+
     function pending() as Number {
         return _queue.size() + (_current == null ? 0 : 1);
     }
@@ -82,4 +89,15 @@ class Api {
         }
         sendNext();
     }
+}
+
+// What a response code means, short enough for one line on the watch.
+function describeCode(code as Number) as String {
+    if (code == -104) { return "Phone not connected"; }
+    if (code == -1001) { return "Server must use HTTPS"; }
+    if (code == -300) { return "Server timed out"; }
+    if (code == -400 || code == -402) { return "Bad server reply"; }
+    if (code < 0) { return "Can't reach server (" + code + ")"; }
+    if (code == 404) { return "Not on the server"; }
+    return "Server error " + code;
 }

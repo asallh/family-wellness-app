@@ -16,18 +16,25 @@ class CheckinView extends WatchUi.View {
     var answered as Boolean = false; // set once, so only one answer is sent
     var event as Dictionary;
     private var _deadline as Number;
+    private var _total as Number = 30; // the server's check-in timeout
     private var _timer as Timer.Timer?;
 
     function initialize(ev as Dictionary) {
         View.initialize();
         event = ev;
         var secs = ev["expiresInSec"];
-        _deadline = System.getTimer() + (secs == null ? 30 : secs as Number) * 1000;
+        var left = secs instanceof Number ? secs : 30;
+        if (left > _total) {
+            _total = left;
+        }
+        _deadline = System.getTimer() + left * 1000;
     }
 
     function onShow() as Void {
-        _timer = new Timer.Timer();
-        _timer.start(method(:tick), 1000, true);
+        if (_timer == null && !answered) {
+            _timer = new Timer.Timer();
+            _timer.start(method(:tick), 1000, true);
+        }
     }
 
     function onHide() as Void {
@@ -84,7 +91,7 @@ class CheckinView extends WatchUi.View {
 
         // Countdown ring around the edge.
         var left = secondsLeft();
-        var frac = left / 30.0;
+        var frac = left / _total.toFloat();
         if (frac > 1) {
             frac = 1.0;
         }
@@ -100,7 +107,7 @@ class CheckinView extends WatchUi.View {
         // Header 28, name 60, question 88, countdown 112 (on a 260 px screen).
         Theme.chevronLeft(dc, w * 29 / 100, h * 11 / 100, Theme.MUTED);
         Theme.text(dc, cx, h * 11 / 100, Graphics.FONT_XTINY, "Check-in", Theme.MUTED);
-        Theme.line(dc, h * 23 / 100, Graphics.FONT_SMALL, event["fromName"] as String, Theme.TEXT);
+        Theme.line(dc, h * 23 / 100, Graphics.FONT_SMALL, getState().nameOf(event), Theme.TEXT);
         Theme.line(dc, h * 34 / 100, Graphics.FONT_TINY, "Are you OK?", Theme.TEXT);
         Theme.line(dc, h * 43 / 100, Graphics.FONT_XTINY, left + "s to answer", left <= 10 ? Theme.WARN : Theme.MUTED);
 

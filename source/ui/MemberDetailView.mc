@@ -42,7 +42,9 @@ class MemberDetailView extends WatchUi.View {
 
         var m = s.member(_id);
         if (m == null) {
-            Theme.text(dc, cx, h / 2, Graphics.FONT_TINY, "Loading...", Theme.MUTED);
+            // Not in the last /family reply: still loading, or gone from the server.
+            Theme.text(dc, cx, h / 2, Graphics.FONT_TINY, s.connected ? "Not in the family" : "Loading...", Theme.MUTED);
+            Theme.text(dc, cx, h * 62 / 100, Graphics.FONT_XTINY, "BACK to return", Theme.DIM);
             return;
         }
 
@@ -50,7 +52,7 @@ class MemberDetailView extends WatchUi.View {
         // title 24, compass 46-158, divider 166, icons 180, values 202, labels 223.
         Theme.chevronLeft(dc, w * 24 / 100, h * 10 / 100, Theme.TEXT);
         Theme.text(dc, cx, h * 9 / 100, Graphics.FONT_SMALL,
-            Theme.fit(dc, Graphics.FONT_SMALL, m["name"] as String, w * 46 / 100), Theme.TEXT);
+            Theme.fit(dc, Graphics.FONT_SMALL, s.nameOf(m), w * 46 / 100), Theme.TEXT);
 
         drawCompass(dc, cx, h * 39 / 100, h * 215 / 1000, m);
 
@@ -171,7 +173,7 @@ class MemberDetailDelegate extends ScreenDelegate {
 
     private function openActions() as Void {
         var m = getState().member(_id);
-        var name = m == null ? _id : m["name"] as String;
+        var name = m == null ? _id : getState().nameOf(m);
         var menu = new WatchUi.Menu2({ :title => name });
         menu.addItem(new WatchUi.MenuItem("Check on " + name, "Are you OK?", :checkin, null));
         menu.addItem(new WatchUi.MenuItem("Back to family", null, :back, null));
@@ -197,9 +199,7 @@ class MemberActionsDelegate extends WatchUi.Menu2InputDelegate {
             return;
         }
         if (item.getId() == :checkin) {
-            var s = getState();
-            s.sendCheckin(_id);
-            s.pushMessage(true, "Check-in sent", "Waiting for " + _name);
+            getState().sendCheckin(_id, _name);
         }
     }
 }

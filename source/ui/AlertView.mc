@@ -17,8 +17,10 @@ class AlertView extends WatchUi.View {
     }
 
     function onShow() as Void {
-        _timer = new Timer.Timer();
-        _timer.start(method(:tick), 1000, true);
+        if (_timer == null) {
+            _timer = new Timer.Timer();
+            _timer.start(method(:tick), 1000, true);
+        }
     }
 
     function onHide() as Void {
@@ -92,7 +94,7 @@ class AlertView extends WatchUi.View {
 
         Theme.warning(dc, cx, h * 85 / 1000, 24);
         Theme.line(dc, h * 19 / 100, Graphics.FONT_SMALL, title(), Theme.TEXT);
-        Theme.line(dc, h * 29 / 100, Graphics.FONT_TINY, event["fromName"] as String, Theme.TEXT);
+        Theme.line(dc, h * 29 / 100, Graphics.FONT_TINY, s.nameOf(event), Theme.TEXT);
         Theme.line(dc, h * 375 / 1000, Graphics.FONT_XTINY, detail(), Theme.MUTED);
         if (event["rank"] == 1) {
             Theme.line(dc, h * 445 / 1000, Graphics.FONT_XTINY, "You are the closest member.", Theme.WARN);
@@ -148,11 +150,17 @@ class AlertDelegate extends ScreenDelegate {
 
     // Jump to the member's compass screen (the alert is acked first).
     function onMenu() as Boolean {
-        var id = _view.event["from"] as String;
-        acknowledge();
-        if (getState().member(id) != null) {
+        var id = _view.event["from"];
+        if (_done) {
+            return true;
+        }
+        // Ack and open the compass before the next queued event shows, so
+        // that event lands on top instead of under the compass.
+        close();
+        if (id instanceof String && getState().member(id) != null) {
             WatchUi.pushView(new MemberDetailView(id), new MemberDetailDelegate(id), WatchUi.SLIDE_LEFT);
         }
+        getState().modalClosed();
         return true;
     }
 
@@ -168,11 +176,15 @@ class AlertDelegate extends ScreenDelegate {
         if (_done) {
             return;
         }
+        close();
+        getState().modalClosed();
+    }
+
+    // Acks and pops the alert, without showing the next event yet.
+    private function close() as Void {
         _done = true;
-        var s = getState();
-        s.ack(_view.event, "seen");
+        getState().ack(_view.event, "seen");
         _view.onHide();
         WatchUi.popView(WatchUi.SLIDE_DOWN);
-        s.modalClosed();
     }
 }

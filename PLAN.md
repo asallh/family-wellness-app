@@ -1,10 +1,10 @@
 # Family Wellness: Hackathon Plan
 
-**Team:** 3 people · **Time:** 6 hours · **Demo:** two Connect IQ simulators (one per laptop) talking through a small server
+**Team:** 3 people · **Time:** 6 hours · **Demo:** Mom on a real fēnix 7 and Son in the Connect IQ simulator, talking through a small server on a Mac over a phone hotspot
 
 ## The pitch (one line)
 
-A two-way family safety network that lives on Garmin watches. Everyone in the family can see everyone else's live heart rate, location and direction. **Anyone** can check on **anyone** with "Are you OK?", and an SOS or fall on any watch alerts the whole family, closest member first. Parents get peace of mind about their kids, and kids can keep an eye on their parents' and grandparents' health.
+A two-way family safety network that lives on Garmin watches. Everyone in the family can see everyone else's live heart rate, location and direction. **Anyone** can check on **anyone** with "Are you OK?", and an SOS or fall on any watch alerts the whole family, closest member first. Parents get peace of mind about their kids, and kids can keep an eye on their parents' health.
 
 ## Core rule: every feature is two-way
 
@@ -20,35 +20,35 @@ The demo has to show features working **in both directions** (Mom checks on Son,
 ## Architecture
 
 ```
- ┌───────────────────────────┐                                  ┌───────────────────────────┐
- │ Laptop 1: CIQ simulator   │   POST telemetry every 5 s       │ Laptop 2: CIQ simulator   │
- │ Watch app as "Mom"        │ ──────────────────────────┐  ┌── │ Watch app as "Son"        │
- │                           │ ◀── poll inbox / events ─┐ │  │   │                           │
- └───────────────────────────┘                          │ ▼  ▼   └───────────────────────────┘
-                                                  ┌─────────────────────┐
-                                                  │ Node + Express      │
-                                                  │ in-memory store     │
-                                                  │ (localhost or ngrok)│
-                                                  └─────────────────────┘
+ ┌──────────────────────┐  Bluetooth  ┌──────────────┐  hotspot   ┌───────────────────────────────┐
+ │ Mom: real fēnix 7    │ ──────────▶ │ Phone:       │ ─────────▶ │ Mac                           │
+ │ (her own sensors)    │ ◀────────── │ Garmin       │ ◀───────── │  Node + Express server :3000  │
+ └──────────────────────┘             │ Connect app  │            │  (in-memory store)            │
+                                      └──────────────┘            │           ▲                   │
+                                                                  │  localhost│                   │
+                                                                  │  CIQ simulator: Son           │
+                                                                  │  tools/feeder.py --mock son   │
+                                                                  └───────────────────────────────┘
 ```
+
+Both watches POST telemetry every 5 s and poll `/family` and their inbox. The feeder fakes Son's vitals, position and heading (the simulator has no real sensors), and leaves Mom's real readings alone.
 
 **Key decisions:**
 
-- **Simulators only.** The whole build and demo runs on the Connect IQ simulator. The physical fēnix 7 is a stretch goal for after the feature freeze, if there's time (see [Stretch: physical watch](#stretch-physical-watch)). The code uses the real sensor APIs, so the same build runs on a real watch later.
-- **No phone app.** The simulator's `Communications.makeWebRequest` goes straight from the Mac to the internet.
+- **One real watch, one simulator.** Mom wears a real fēnix 7 and Son runs in the Connect IQ simulator. Both run the same build, with the real sensor APIs. Setup steps are in the [README](README.md#physical-watch-moms-fēnix-7).
+- **No phone app of our own.** The real watch's `Communications.makeWebRequest` goes through the Garmin Connect app on the paired phone. The simulator's goes straight from the Mac.
 - **The server is the network.** Watches can't talk to each other directly, so every message goes through the server. It's small: no auth.
 - **No database.** The server keeps each member's latest telemetry and pending events in an in-memory `Map`, which is all the features need. A restart wipes the state, which is fine for a demo (and `/debug/reset` does it on purpose). A database only matters for real accounts, history or multiple families, which are out of scope.
-- **Local mode for dev, shared mode for together.** Each person runs their own server on `localhost:3000` while building alone. Whenever the two simulators need to see each other, and for the demo, both point at **one** server. Separate local servers are separate families. See the [README](README.md) for both setups.
-- **One simulator per laptop, so two machines.** We tested this. The Connect IQ simulator only runs one instance per Mac. A second copy quits immediately, even with its main port moved via `SHELL_SERVER_PORT` and a separate temp folder. **Don't spend hackathon time trying to work around it.** Building and testing two-way features always uses two machines: Mom on one, Son on the other. A third laptop can add a third live member if you want one.
-- **Pair up to test two-way features.** Most work happens alone in local mode with `demo.sh` playing the other members. When you need a real round trip between two watches (check-in reply, SOS arrow), pair with a teammate. Point both machines at one server, and pick different identities.
+- **One server for the demo, on the Mac, over the phone's hotspot.** The Mac joins the phone's hotspot, and Mom's build has the Mac's hotspot address baked in (`BUILD_ONLY=1 DEVICE=fenix7 ./start.sh mom http://<mac-ip>:3000`). Son's simulator uses `localhost`. No ngrok, unless the phone refuses plain `http://` (see the README's troubleshooting table). Separate servers are separate families.
+- **One simulator per Mac.** We tested this. The Connect IQ simulator only runs one instance per Mac. A second copy quits immediately, even with its main port moved via `SHELL_SERVER_PORT` and a separate temp folder. **Don't spend time trying to work around it.** The real watch is the second member, and the feeder or `demo.sh` can play either member when the watch isn't on hand.
 - **One app, many identities.** Both simulators run the *same build*. You pick who you are on the watch itself (see below).
-- **No extra simulator tool.** The simulator's *Simulation* menu sets HR, GPS and heading. The watch app's "Simulate fall" item covers falls. `server/demo.sh` makes either member do things, and is the stage backup.
-- **The family is just Mom and Son.** The server used to seed Dad and Grandpa; both were removed. `demo.sh` can make either watch send an SOS or a health spike.
+- **Fake data from a window.** `tools/feeder.py` sets Son's HR, SpO₂, position and heading (pinned on the server, so the simulator's own readings can't overwrite them), with presets for alerts. `--mock son` fakes only Son, so Mom's real sensors show through. "Simulate fall" on either watch covers falls. `server/demo.sh` makes either member do anything from a terminal, and is the stage backup.
+- **The family is just Mom and Son.** The server seeds no other members (Dad and Grandpa were both removed). The code still supports a seeded member if one is ever wanted (see `server/src/store.js`).
 
 ## Identity and server URL
 
-- **Who am I:** `./start.sh mom` or `./start.sh son` bakes the persona and server URL into the build. A plain VS Code build uses the menu picker (Mom / Son), saved in `Application.Storage`.
-- **Server URL:** `source/Config.mc` holds two constants. `LOCAL_URL` is `http://localhost:3000`. `SHARED_URL` is an ngrok **free static domain** (`ngrok http --url=<your-domain>.ngrok-free.app 3000`), committed once. A **Menu → Server: Local / Shared** toggle, saved in `Application.Storage`, picks one without editing code. Local is the default.
+- **Who am I:** `./start.sh mom` or `./start.sh son` bakes the persona and server URL into the build (`BUILD_ONLY=1` stops after the build, for sideloading). A plain VS Code build falls back to the API tester's picker (Mom / Son), saved in `Application.Storage`.
+- **Server URL:** whatever `start.sh` was given. Without it, `source/Config.mc` has `LOCAL_URL` (`http://localhost:3000`) and `SHARED_URL` (an ngrok domain, unused for now).
 - **Simulator + HTTP:** for local mode, untick *Settings → Use Device HTTPS Requirements* in the simulator, so it can call `http://localhost`.
 
 ## Features (all on the watch, all two-way)
@@ -57,11 +57,11 @@ The demo has to show features working **in both directions** (Mom checks on Son,
 |---|---|---|
 | **Family list** | Every other member with ♥ HR, distance, and a status dot (ok / alert / stale / SOS) | HR, GPS |
 | **Direction to a member** | Pick anyone to get a big arrow pointing at them, with their vitals underneath | GPS + compass |
-| **"Are you OK?" check-in** | From any member's detail screen, choose "Check on them". Their watch vibrates with OK / HELP and a 30 s countdown, and the reply shows on the sender's watch. A HELP reply, or no reply, escalates to an SOS to the whole family. | Vibration |
-| **Emergency SOS broadcast** | Any member can choose SOS from the menu. *Every other* watch vibrates with "Son needs help, 350 m" and an arrow to them. The closest member sees "(you're closest)". | GPS, vibration |
-| **Fall detection** | Free-fall then impact, followed by "Did you fall?" with a 15 s countdown. If nobody cancels, the SOS broadcast goes out automatically. | Accelerometer, barometer |
+| **"Are you OK?" check-in** | From any member's detail screen, choose "Check on them". Their watch vibrates with **Yes / No / Need Help / I'm Fine** and a 30 s countdown, and the reply shows on the sender's watch. No, Need Help, or no reply escalates to an SOS to the whole family. | Vibration |
+| **Emergency SOS broadcast** | Any member can choose SOS from the menu. *Every other* watch vibrates with an alert naming them, the distance and an arrow to them. The closest live member sees "You are the closest member." | GPS, vibration |
+| **Fall detection** | Free fall then impact then stillness, followed by "Did you fall?" with a 15 s countdown and **I'm OK** / **Get help**. If nobody cancels, a fall alert goes to the whole family. "Simulate fall" plays a recorded fall through the same detector. | Accelerometer |
 | **Health alerts** | When anyone's HR goes above 150 or below 40, or SpO₂ drops below 90, everyone else gets a vibration and an alert. | HR, Pulse Ox |
-| **Vitals on the detail screen** | HR, SpO₂, skin temperature, altitude, battery | HR, Pulse Ox, temperature, barometer |
+| **Vitals on the detail screen** | HR, SpO₂, battery, and a compass with an arrow and distance to them | HR, Pulse Ox, GPS, compass |
 
 ### Sensors used (for the bonus points)
 
@@ -73,9 +73,9 @@ All of them are read through the real Connect IQ APIs, and the simulator feeds t
 | GPS | `Position.enableLocationEvents` | Distance, closest-member routing, direction arrow |
 | Compass / magnetometer | `Sensor.Info.heading` | Direction arrow |
 | Accelerometer | `Sensor.registerSensorDataListener` (25 Hz) | Fall detection |
-| Barometer / altimeter | `Sensor.Info.pressure`, `altitude` | Second fall signal (sudden drop), shown on detail screen |
+| Barometer / altimeter | `Sensor.Info.altitude` | Sent with telemetry |
 | Pulse Ox | `Sensor.Info.oxygenSaturation` | Low-SpO₂ alert |
-| Temperature | `Sensor.Info.temperature` | Shown on detail screen |
+| Temperature | `Sensor.Info.temperature` | Sent with telemetry |
 | Vibration | `Attention.vibrate` | All alerts and prompts |
 
 ## API contract (agree on this first, 0:00–0:20)
@@ -136,8 +136,8 @@ FamilyState (singleton, Person C)
 3. Event dispatch: new inbox events trigger `Attention.vibrate` and hand off to Person A's alert or check-in views.
 4. **Fall detection** (from about 2:30):
    - Accelerometer at 25 Hz. Magnitude = √(x²+y²+z²) in milli-g.
-   - Rule: free fall (< 400 mg) followed within 1 s by an impact (> 2500 mg), then roughly still for 2 s. Optionally confirm with an altitude drop from the barometer.
-   - A trigger opens "Did you fall?" with a 15 s countdown, then calls `sendSos("fall")`.
+   - Rule: free fall (< 400 mg) followed within 1 s by an impact (> 2500 mg), then still (within ±200 mg of 1 g) for 2 s. Done: `source/FallDetector.mc`, tested off the watch by `tools/check_fall.py`.
+   - A trigger opens "Did you fall?" (`source/ui/FallView.mc`) with a 15 s countdown, then calls `sendSos("fall")`.
    - The simulator can't stream a realistic fall, so "Simulate fall" pushes a recorded sample array through the *same* detector function. The algorithm is real (and ready for a real watch), and the demo is reliable.
 
 ## Timeline
@@ -155,29 +155,43 @@ FamilyState (singleton, Person C)
 
 Priority order if time runs short: telemetry → family list → two-way check-in → SOS broadcast + alert → direction arrow → health alerts → fall detection.
 
-## Demo script (about 3 minutes)
+## Demo script (about 4 minutes)
 
-Two laptops side by side: Laptop 1 is **Mom's watch** and Laptop 2 is **Son's watch**. Both are on the shared server. Run `server/demo.sh reset` before you start.
+**Setup:** Mom (the presenter) wears the real fēnix 7. Son is the Connect IQ simulator on the Mac, shown on the projector next to a close-up of Mom's watch. The Mac runs the server and `python3 tools/feeder.py --mock son`. Before you start:
 
-1. "I worry about my son walking home from school. My son worries about me too. Garmin can connect all of us, in both directions."
-2. Both watches show the family list: the other member's live HR and distance.
-3. **Parent → child:** Mom chooses "Check on Son". Son's watch vibrates, Son taps **OK**, and Mom's watch shows "Son says OK ✅".
-4. **Child → parent:** on Mom's laptop, raise the simulated HR above 150. Son's watch vibrates with "Mom's heart rate is high (162)". Son chooses "Check on Mom", and **Mom doesn't answer**. After 30 s it escalates, and Son gets the SOS with an arrow pointing to Mom.
-5. **Direction:** change Son's heading in the simulator, and the arrow to Mom swings around with it.
-6. **Fall:** on Son's watch, choose **Simulate fall**. "Did you fall?" counts down 15 s, then Mom's watch shows "Son may have fallen, 350 m (you're closest)".
-8. Close on the sensor list (HR, GPS, compass, accelerometer, barometer, SpO₂, temperature) and what comes next, including running it on a real fēnix 7.
+```bash
+./server/demo.sh reset
+```
 
-## Stretch: physical watch
+```bash
+./server/demo.sh family
+```
 
-Only after the 5:00 feature freeze, and only if the demo is already solid. The fēnix 7 is already in the manifest.
+Check that Mom's `lastSeen` is under 10 s, then press **Reset server** in the feeder (it keeps feeding Son). Indoors, give Mom a position, so arrows and distances work without a GPS fix:
 
-- **Needs:** the fēnix 7 device downloaded in the SDK Manager, a phone paired through the Garmin Connect app (the watch's requests go through it), and the shared ngrok server, because a real watch can't reach `localhost`.
-- **Sideload:** "Monkey C: Build for Device" → `fenix7`, then copy the `.prg` into the watch's `GARMIN/APPS` folder over USB (OpenMTP on a Mac).
-- **Check:** if the build complains about `minApiLevel` (currently `5.2.0`), lower it to what the device supports. Indoors, GPS may not get a fix.
+```bash
+./server/demo.sh move mom 38.8599 -94.7995
+```
+
+The feeder puts Son about 500 m south of that.
+
+1. **Pitch.** "I worry about my son walking home from school. He worries about me too. Garmin can connect all of us, in both directions."
+2. **Family list, both ways.** Mom's watch shows Son's card: heart rate, distance, green dot. Son's simulator shows Mom's card with her *real* heart rate from the watch on her wrist.
+3. **Check-in, Mom → Son.** On Mom's watch, START on Son → **Check on Son**. Mom sees "Check-in sent". Son's watch vibrates with "Are you OK?" and a 30 s ring. Click **Yes** on the simulator. Mom's watch shows "Son is OK".
+4. **Check-in, Son → Mom.** On the simulator, open Mom → **Check on Mom**. Mom's real watch buzzes. Mom taps **Need Help**. Son's watch shows "Mom needs help", followed by an SOS alert with an arrow to Mom and "You are the closest member."
+   - *Variant:* Mom ignores it. After 30 s it escalates on its own, and Son gets "No Reply: SOS".
+5. **Health alert, Son → Mom.** In the feeder, click the **High HR** preset for Son. Mom's watch buzzes with "High Heart Rate · Son · 165 bpm" and an arrow to him. Acknowledge, then click **Normal** to put Son back.
+   - *The other way:* Mom's real HR won't hit 150 on stage, so `./server/demo.sh hr mom 165` stands in for it, and Son's watch gets the alert. (Mom's own telemetry sets it back within 5 s.)
+6. **SOS broadcast with closest-member routing.** On Mom's watch: MENU → **SOS** → **Yes, send SOS**. Mom sees "SOS sent" once the server has it. Son's watch shows the SOS with the distance, the arrow and "You are the closest member." Then the other way: on the simulator, MENU → **SOS**, and Mom's watch alerts.
+7. **Fall detection.** On the simulator: MENU → **Simulate fall**. A recorded fall runs through the same detector the real watch uses. "Did you fall?" counts down from 15. Let it run out, and Mom's watch shows "Fall Detected · Son" with the arrow and distance. Then on Mom's watch: **Simulate fall**, and pick **I'm OK** to show the cancel ("Glad you're OK", nothing sent).
+8. **Compass arrow.** Open Son on Mom's watch, and turn on the spot: the dial and the arrow to Son swing with the watch's real compass. On the simulator, drag the feeder's **Heading** slider for Son, and the arrow to Mom swings the same way. Click **Move 100 m N** a few times, and the distance on both watches shrinks.
+9. **Close** on the sensors used (HR, Pulse Ox, GPS, compass, accelerometer, vibration) and what's next.
+
+**If something fails on stage:** `./server/demo.sh` can make either member check in, answer, SOS, fall or spike their HR (`./server/demo.sh` with no arguments lists everything). **Preview screens** in the watch menu shows every alert with sample data, with no server at all.
 
 ## Out of scope (say these as "next steps")
 
-- Running on real watches day to day (the code is ready, see the stretch section)
+- Running day to day: a background service, battery tuning, and a pairing flow instead of `start.sh`
 - A phone companion app with a map, real push notifications, and calling or texting emergency services
 - A background service so sharing continues while the app is closed. Connect IQ background services can only wake every 5 minutes or more.
 - Auth, real accounts, a database, multiple families, privacy controls such as letting a member pause sharing
@@ -185,7 +199,8 @@ Only after the 5:00 feature freeze, and only if the demo is already solid. The f
 
 ## Risks and mitigations
 
-- **Simulator networking:** get the first `makeWebRequest` working against `localhost` within the first hour. For the shared server, use the ngrok HTTPS URL, and send the `ngrok-skip-browser-warning` header if ngrok's free-tier warning page breaks JSON responses.
+- **Real-watch networking:** the watch reaches the server through Garmin Connect on the phone. If the phone refuses plain `http://` (`Server must use HTTPS`, typical on iPhones) or can't reach the Mac on its own hotspot, fall back to `ngrok http 3000` and rebuild Mom with the `https://` URL. Test this well before the demo.
+- **Real watch flaky on stage:** the feeder can mock Mom too (tick **Mock** for Mom), so the demo runs entirely on one Mac.
 - **Two people in one Monkey C codebase:** stick to the `FamilyState` seam. Person A doesn't make web requests, and Person C doesn't draw. Commit small and often.
 - **Monkey C learning curve:** plain `dc.drawText` and `dc.fillPolygon`, no layouts.
 - **Live demo fails:** keep the backup video, and use `server/demo.sh` to trigger any alert from a terminal.

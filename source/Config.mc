@@ -11,6 +11,9 @@ module Config {
 
     const POLL_MS = 5000;
 
+    // Seconds the "Did you fall?" screen waits before alerting the family.
+    const FALL_COUNTDOWN_S = 15;
+
     // Run the API self-test as soon as the app starts (handy with monkeydo).
     const AUTO_SELF_TEST = false;
 

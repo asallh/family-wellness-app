@@ -35,12 +35,17 @@ class FamilyState {
         _timer = new Timer.Timer();
         _timer.start(method(:poll), Config.POLL_MS, true);
         poll();
+        startFallWatch();
     }
 
     function stop() as Void {
         if (_timer != null) {
             _timer.stop();
             _timer = null;
+        }
+        if (fallWatching) {
+            Sensor.unregisterSensorDataListener();
+            fallWatching = false;
         }
     }
 
@@ -58,14 +63,17 @@ class FamilyState {
     function onFamily(code as Number, data) as Void {
         connected = code == 200 && data instanceof Array;
         if (!connected) {
-            lastError = "Error " + code;
+            lastError = describeCode(code);
             WatchUi.requestUpdate();
             return;
         }
         lastError = null;
         var others = [] as Array<Dictionary>;
         for (var i = 0; i < data.size(); i++) {
-            var m = data[i] as Dictionary;
+            var m = data[i];
+            if (!(m instanceof Dictionary) || !(m["id"] instanceof String)) {
+                continue;
+            }
             if (myId().equals(m["id"])) {
                 _meFromServer = m;
             } else {
@@ -81,12 +89,21 @@ class FamilyState {
             return;
         }
         for (var i = 0; i < data.size(); i++) {
-            var ev = data[i] as Dictionary;
+            var ev = data[i];
+            if (!(ev instanceof Dictionary) || !(ev["eventId"] instanceof String) || !(ev["type"] instanceof String)) {
+                continue;
+            }
             var id = ev["eventId"] as String;
             if (_seen.hasKey(id)) {
                 continue;
             }
             _seen[id] = true;
+            // A check-in that ran out before we saw it (the app was closed):
+            // the server already escalated, so there's nothing to answer.
+            if ("checkin".equals(ev["type"]) && ev["expiresInSec"] != null && (ev["expiresInSec"] as Number) <= 0) {
+                ack(ev, "seen");
+                continue;
+            }
             _queue.add(ev);
         }
         showNext();
@@ -97,7 +114,7 @@ class FamilyState {
     // and the next queued event shows.
 
     function showNext() as Void {
-        if (_modalOpen || _queue.size() == 0) {
+        if (_modalOpen || _fallOpen || _awaiting || _queue.size() == 0) {
             return;
         }
         var ev = _queue[0];
@@ -116,7 +133,7 @@ class FamilyState {
             vibrate(1);
             ack(ev, "seen");
             var response = ev["response"];
-            var name = ev["fromName"] as String;
+            var name = nameOf(ev);
             if ("ok".equals(response)) {
                 pushMessage(true, name + " is OK", "Replied to your check-in");
             } else if ("no".equals(response)) {
@@ -143,12 +160,66 @@ class FamilyState {
         showNext();
     }
 
-    // ---- actions ------------------------------------------------------------
-
-    function sendCheckin(targetId as String) as Void {
-        _tester.api.post("/members/" + targetId + "/checkin", { "from" => myId() }, null);
+    // A name for the screen, from an event (fromName, from) or a member
+    // (name, id). Never null, so drawing code can't crash on a missing field.
+    function nameOf(d as Dictionary?) as String {
+        if (d == null) {
+            return "Someone";
+        }
+        var keys = ["fromName", "name", "from", "id"];
+        for (var i = 0; i < keys.size(); i++) {
+            var v = d[keys[i]];
+            if (v instanceof String && v.length() > 0) {
+                return v;
+            }
+        }
+        return "Someone";
     }
 
+    // ---- confirmations --------------------------------------------------------
+    // Sending a check-in, an SOS or a fall alert shows its confirmation only once
+    // the server answers, so the screen never claims a request that failed.
+    // Inbox events wait meanwhile, so the confirmation isn't buried.
+
+    private var _awaiting as Boolean = false;
+    private var _sentTitle as String = "";
+    private var _sentSubtitle as String = "";
+    private var _failTitle as String = "";
+    private var _sentGood as Boolean = true; // green check, or red "!" for alerts
+
+    function sendAndConfirm(path as String, body as Dictionary, good as Boolean,
+            sentTitle as String, sentSubtitle as String, failTitle as String) as Void {
+        _awaiting = true;
+        _sentGood = good;
+        _sentTitle = sentTitle;
+        _sentSubtitle = sentSubtitle;
+        _failTitle = failTitle;
+        _tester.api.postNow(path, body, method(:onSent));
+    }
+
+    function onSent(code as Number, data) as Void {
+        _awaiting = false;
+        if (_modalOpen) {
+            // A screen was already up (e.g. under the fall prompt): don't
+            // stack the confirmation on it.
+            System.println("confirmation skipped: " + (code == 200 ? _sentTitle : _failTitle));
+            return;
+        }
+        if (code == 200) {
+            pushMessage(_sentGood, _sentTitle, _sentSubtitle);
+        } else {
+            pushMessage(false, _failTitle, describeCode(code));
+        }
+    }
+
+    // ---- actions ------------------------------------------------------------
+
+    function sendCheckin(targetId as String, name as String) as Void {
+        sendAndConfirm("/members/" + targetId + "/checkin", { "from" => myId() }, true,
+            "Check-in sent", "Waiting for " + name, "Check-in not sent");
+    }
+
+    // type "manual" (the SOS menu) or "fall".
     function sendSos(type as String) as Void {
         var body = { "type" => type } as Dictionary;
         var pos = myPosition();
@@ -156,7 +227,86 @@ class FamilyState {
             body["lat"] = pos[0];
             body["lon"] = pos[1];
         }
-        _tester.api.post("/members/" + myId() + "/sos", body, null);
+        var fall = type.equals("fall");
+        sendAndConfirm("/members/" + myId() + "/sos", body, false,
+            fall ? "Fall alert sent" : "SOS sent", "Your family has been alerted",
+            fall ? "Fall alert not sent" : "SOS not sent");
+    }
+
+    // ---- fall detection -----------------------------------------------------
+    // The accelerometer streams 25 samples a second into the FallDetector.
+    // When it fires, "Did you fall?" opens on top of whatever is showing.
+    // Inbox events wait until it closes.
+
+    var fallWatching as Boolean = false;
+    private var _fall as FallDetector = new FallDetector();
+    private var _fallOpen as Boolean = false;
+
+    function startFallWatch() as Void {
+        if (!(Sensor has :registerSensorDataListener)) {
+            System.println("Fall detection: no accelerometer listener on this device");
+            return;
+        }
+        try {
+            Sensor.registerSensorDataListener(method(:onAccel), {
+                :period => 1,
+                :accelerometer => { :enabled => true, :sampleRate => 25 } // FallDetector counts samples at 25 Hz
+            });
+            fallWatching = true;
+            System.println("Fall detection on (accelerometer, 25 Hz)");
+        } catch (e) {
+            System.println("Fall detection unavailable: " + e.getErrorMessage());
+        }
+    }
+
+    function onAccel(data as Sensor.SensorData) as Void {
+        var a = data.accelerometerData;
+        if (a == null || _fallOpen || a.x == null || a.y == null || a.z == null) {
+            return;
+        }
+        var mags = FallDetector.magnitudes(a.x, a.y, a.z);
+        if (_fall.addSamples(mags)) {
+            onFallDetected("accelerometer");
+        }
+    }
+
+    // "Simulate fall": the recorded sample through the same detector.
+    function simulateFall() as Void {
+        if (_fallOpen) {
+            return;
+        }
+        _fall.reset();
+        if (_fall.addSamples(FallSample.samples())) {
+            onFallDetected("recorded sample");
+        } else {
+            pushMessage(false, "No fall detected", "Sample didn't trigger");
+        }
+    }
+
+    function onFallDetected(source as String) as Void {
+        System.println("FALL DETECTED (" + source + ")");
+        _fall.reset();
+        if (_fallOpen) {
+            return;
+        }
+        _fallOpen = true;
+        vibrate(4);
+        var view = new FallView();
+        WatchUi.pushView(view, new FallDelegate(view), WatchUi.SLIDE_UP);
+    }
+
+    // FallView closed. sendAlert: the countdown ran out or "Get help" was
+    // picked. The confirmation waits for the server, like check-in answers.
+    function fallPromptClosed(sendAlert as Boolean) as Void {
+        _fallOpen = false;
+        _fall.reset();
+        if (!sendAlert) {
+            if (!_modalOpen) {
+                pushMessage(true, "Glad you're OK", "No alert sent");
+            }
+            return;
+        }
+        sendSos("fall");
     }
 
     // Answers a check-in ("ok", "no" or "help") and confirms only once the
@@ -164,14 +314,14 @@ class FamilyState {
     private var _answer as Dictionary? = null;
 
     function answerCheckin(ev as Dictionary, response as String) as Void {
-        _answer = { "name" => ev["fromName"], "response" => response };
+        _answer = { "name" => nameOf(ev), "response" => response };
         _modalOpen = true; // hold other events until the confirmation shows
         var id = ev["eventId"] as String;
         if (id.find("preview") == 0) {
             onAnswered(200, { "ok" => true });
             return;
         }
-        _tester.api.post("/events/" + id + "/ack", { "by" => myId(), "response" => response }, method(:onAnswered));
+        _tester.api.postNow("/events/" + id + "/ack", { "by" => myId(), "response" => response }, method(:onAnswered));
     }
 
     function onAnswered(code as Number, data) as Void {

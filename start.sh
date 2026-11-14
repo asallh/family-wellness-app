@@ -4,6 +4,9 @@
 #   ./start.sh mom                          Mom's watch, local server
 #   ./start.sh son                          Son's watch, local server
 #   ./start.sh son http://<laptop-ip>:3000  Use another laptop's server
+#   BUILD_ONLY=1 DEVICE=fenix7 ./start.sh mom http://<mac-ip>:3000
+#                                           Build bin/family-mom.prg for a real
+#                                           watch, without the simulator
 #
 # The persona and server URL are built into the app, so each watch knows who
 # it is and which server it's talking to. It shows the server on screen and
@@ -21,7 +24,8 @@ Usage: ./start.sh <mom|son> [server-url]
   server-url   Server to use (default $FAMILY_API, else http://localhost:3000).
                A localhost server is started for you if it isn't running.
 
-Env: DEVELOPER_KEY (defaults to VS Code's monkeyC.developerKeyPath), DEVICE (default fenix7pro)
+Env: DEVELOPER_KEY (defaults to VS Code's monkeyC.developerKeyPath), DEVICE (default fenix7pro),
+     BUILD_ONLY=1 (build bin/family-<who>.prg to sideload onto a real watch, then stop)
 EOF
 }
 
@@ -55,6 +59,9 @@ if [[ -z "$KEY" && -f "$VSCODE_SETTINGS" ]]; then
 fi
 [[ -n "$KEY" && -f "$KEY" ]] || die "developer key not found. Set DEVELOPER_KEY=/path/to/developer_key, or run 'Monkey C: Generate a Developer Key' in VS Code."
 
+DEVICES_DIR="$HOME/Library/Application Support/Garmin/ConnectIQ/Devices"
+[[ -d "$DEVICES_DIR/$DEVICE" ]] || die "device '$DEVICE' isn't installed. Download it in the Connect IQ SDK Manager (Devices tab), then run this again."
+
 # ---- Server ------------------------------------------------------------------
 # True only when our server answers, not just anything on that address.
 up() { curl -fsS -m 3 "$SERVER/" 2>/dev/null | grep -q '"family-wellness"'; }
@@ -62,7 +69,12 @@ up() { curl -fsS -m 3 "$SERVER/" 2>/dev/null | grep -q '"family-wellness"'; }
 SERVER_PID=""
 trap '[[ -n "$SERVER_PID" ]] && kill "$SERVER_PID" 2>/dev/null || true' EXIT
 
-if up; then
+if [[ -n "${BUILD_ONLY:-}" ]]; then
+  # A real watch reaches the server through the phone, not this Mac's
+  # localhost, so don't start or require one here.
+  [[ "$SERVER" =~ ^http://(localhost|127\.0\.0\.1) ]] && die "a real watch can't reach localhost. Pass the Mac's hotspot address, e.g. http://172.20.10.2:3000"
+  echo "Server (baked in): $SERVER"
+elif up; then
   echo "Server: $SERVER"
 elif [[ "$SERVER" =~ ^http://(localhost|127\.0\.0\.1):([0-9]+)$ ]]; then
   PORT="${BASH_REMATCH[2]}"
@@ -97,6 +109,13 @@ echo "Building $WHO's watch for $DEVICE..."
 (cd "$ROOT" && "$SDK_BIN/monkeyc" -f "monkey.jungle;bin/launch.jungle" -d "$DEVICE" -o "$PRG" -y "$KEY") 2>&1 \
   | grep -v -E "No supported languages|launcher icon|container access" || true
 [[ -f "$PRG" ]] || die "build failed"
+
+if [[ -n "${BUILD_ONLY:-}" ]]; then
+  echo
+  echo "Built $PRG for $DEVICE, talking to $SERVER."
+  echo "Copy it to the watch's GARMIN/APPS folder over USB (see README: Physical watch)."
+  exit 0
+fi
 
 # ---- Simulator (one per Mac) ---------------------------------------------------
 if ! lsof -nP -iTCP:1234 -sTCP:LISTEN >/dev/null 2>&1; then

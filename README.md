@@ -8,7 +8,7 @@ The family is the two watches, **Mom** and **Son**. Every feature works both way
 
 ## Run it
 
-You need the Connect IQ SDK (with the `fenix7pro` device), a developer key set in VS Code, and Node 20+.
+You need the Connect IQ SDK (with the `fenix7pro` device), a developer key set in VS Code, and Node 20+. For Mom's real fēnix 7, see [Physical watch](#physical-watch-moms-fēnix-7).
 
 ```bash
 ./start.sh mom
@@ -27,7 +27,7 @@ The watch shows who it is and which server it's on, and every request and respon
 
 **First time only:** in the simulator, untick **Settings → Use Device HTTPS Requirements**. Otherwise every request fails with `-1001`.
 
-**On the watch:** press START or MENU for the menu. **Run self-test** checks every endpoint and prints `PASS`/`FAIL`. The other items send one request each.
+**On the watch:** the family list is the main screen. MENU (or START with nobody listed) opens the menu: **SOS**, **Simulate fall**, **Preview screens** (every alert with sample data, no server needed) and **API tester** (**Run self-test** checks every endpoint and prints `PASS`/`FAIL`).
 
 Only one simulator runs per Mac. Run `./start.sh mom` on one laptop and `./start.sh son` on another, both pointed at the same server: `./start.sh son http://<other-laptop>:3000`.
 
@@ -148,6 +148,48 @@ cd server && npm test
 
 **Do we need a database?** No. The server keeps the family's latest telemetry and pending events in memory, which is all the features need. Losing state on restart is fine for a demo, and `/debug/reset` does it on purpose. A database only matters once you have real accounts, history or multiple families, which are all out of scope.
 
-## Stretch: physical watch (fēnix 7)
+## Physical watch (Mom's fēnix 7)
 
-Not part of the main build. Only try this after the feature freeze if the simulator demo is solid. The steps are in [PLAN.md → Stretch: physical watch](PLAN.md#stretch-physical-watch).
+Mom wears a real fēnix 7. Son runs in the simulator with the feeder. The watch has no Wi-Fi path of its own: its requests go over Bluetooth to the Garmin Connect app on the phone, and from there to the server. So the phone, the Mac running the server, and the watch's pairing all have to line up.
+
+1. **Download the device profile once.** Open the Connect IQ SDK Manager → **Devices**, and download **fēnix 7** (`fenix7`). Without it the build stops with "device 'fenix7' isn't installed". If Mom's watch is actually a fēnix 7 **Pro**, use `fenix7pro` everywhere below instead. Check under **Settings → System → About** on the watch.
+2. **Join the phone's hotspot** on the Mac, and find the Mac's address on it:
+   ```bash
+   ipconfig getifaddr en0
+   ```
+   An iPhone hotspot gives addresses like `172.20.10.x`, and Android often uses `192.168.x.x`.
+3. **Start the server** on the Mac. If macOS asks whether `node` may accept incoming connections, allow it.
+   ```bash
+   cd server && npm start
+   ```
+4. **Build Mom's app** with that address baked in. This builds `bin/family-mom.prg` and stops (no simulator):
+   ```bash
+   BUILD_ONLY=1 DEVICE=fenix7 ./start.sh mom http://<mac-ip>:3000
+   ```
+5. **Sideload it.** Plug the watch in over USB and copy `bin/family-mom.prg` into its `GARMIN/APPS` folder. On a Mac, macOS doesn't mount the watch as a drive, so use [OpenMTP](https://openmtp.ganeshrvel.com/). Unplug, and the app appears in the watch's app list (START → scroll to **Family Wellness**). If it shows an "IQ!" icon, it was built for the wrong device (see step 1).
+6. **Phone:** pair the watch with the **Garmin Connect** app, keep the app open (or at least running in the background), with Bluetooth on. The watch's requests fail with `Phone not connected` (`-104`) otherwise.
+7. **Son on the simulator**, with the feeder faking only Son so Mom's real sensors show through:
+   ```bash
+   ./start.sh son
+   ```
+   ```bash
+   python3 tools/feeder.py --mock son
+   ```
+8. **Check it:** the server log shows `POST /members/mom/telemetry` every 5 s, and `./server/demo.sh family` shows Mom with a real heart rate and `lastSeen` under 10.
+
+**If Mom's watch shows an error under "Connecting...":**
+
+| Watch says | Meaning | Fix |
+|---|---|---|
+| `Phone not connected` | No Bluetooth link to Garmin Connect | Open Garmin Connect on the phone, and check that the watch is paired |
+| `Server must use HTTPS` | The phone refuses plain `http://` (iPhones enforce this) | Run `ngrok http 3000` and build with the `https://…ngrok-free.app` URL instead of the hotspot IP |
+| `Can't reach server (-2xx/-3xx)` | The phone can't reach the Mac's IP | Check the IP, allow `node` in the macOS firewall, try `curl http://<mac-ip>:3000/` from the phone's browser |
+| `Server timed out` | Server down or very slow | Check the server is still running |
+
+**Indoors, GPS won't get a fix,** so the arrows to and from Mom say "No GPS fix". Give Mom a position on the server instead. The watch uses it whenever it has no fix of its own:
+
+```bash
+./server/demo.sh move mom 38.8599 -94.7995
+```
+
+**Fall detection on the real watch** uses the accelerometer at 25 Hz: a free fall below 0.4 g, an impact above 2.5 g within 1 s, then 2 s of lying still. Dropping the watch onto a cushion from about a metre and leaving it there should trigger it, but this hasn't been tried on the real watch yet. For the demo, **Simulate fall** in the menu plays a recorded fall through the same detector and is far more reliable. `python3 tools/check_fall.py` tests the detector's logic off the watch.

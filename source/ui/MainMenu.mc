@@ -6,6 +6,7 @@ import Toybox.WatchUi;
 function openMainMenu() as Void {
     var menu = new WatchUi.Menu2({ :title => "Family" });
     menu.addItem(new WatchUi.MenuItem("SOS", "Alert the family", :sos, null));
+    menu.addItem(new WatchUi.MenuItem("Simulate fall", getState().fallWatching ? "Detector is on" : "Detector: sample only", :fall, null));
     menu.addItem(new WatchUi.MenuItem("Preview screens", "Sample alerts", :preview, null));
     menu.addItem(new WatchUi.MenuItem("API tester", "I am " + getTester().myId, :tester, null));
     WatchUi.pushView(menu, new MainMenuDelegate(), WatchUi.SLIDE_UP);
@@ -23,6 +24,10 @@ class MainMenuDelegate extends WatchUi.Menu2InputDelegate {
             confirm.addItem(new WatchUi.MenuItem("Yes, send SOS", "Alerts everyone", :yes, null));
             confirm.addItem(new WatchUi.MenuItem("Cancel", null, :no, null));
             WatchUi.pushView(confirm, new SosConfirmDelegate(), WatchUi.SLIDE_UP);
+        } else if (id == :fall) {
+            // Close the menu, then play the recorded fall through the detector.
+            WatchUi.popView(WatchUi.SLIDE_IMMEDIATE);
+            getState().simulateFall();
         } else if (id == :preview) {
             openPreviewMenu();
         } else if (id == :tester) {
@@ -41,9 +46,7 @@ class SosConfirmDelegate extends WatchUi.Menu2InputDelegate {
         WatchUi.popView(WatchUi.SLIDE_IMMEDIATE);
         WatchUi.popView(WatchUi.SLIDE_IMMEDIATE);
         if (item.getId() == :yes) {
-            var s = getState();
-            s.sendSos("manual");
-            s.pushMessage(false, "SOS sent", "Your family has been alerted");
+            getState().sendSos("manual");
         }
     }
 }

@@ -26,6 +26,11 @@ class FamilyListView extends WatchUi.View {
         Theme.text(dc, cx, h * 16 / 100, Graphics.FONT_SMALL, "Family", Theme.TEXT);
 
         var list = s.members;
+        if (list.size() > 0 && !s.connected) {
+            // Showing the last data we had: say so, or it looks live.
+            Theme.line(dc, h * 25 / 100, Graphics.FONT_XTINY,
+                s.lastError != null ? s.lastError : "Reconnecting...", Theme.WARN);
+        }
         if (list.size() == 0) {
             Theme.line(dc, h / 2, Graphics.FONT_TINY, s.connected ? "No one else yet" : "Connecting...", Theme.MUTED);
             var detail = s.lastError != null ? s.lastError + " · " + getTester().serverHost() : getTester().serverHost();
@@ -120,7 +125,7 @@ class FamilyListView extends WatchUi.View {
         // Two lines centred as a block on the card.
         var blockTop = y - (nameH + subH - 6) / 2;
         Theme.textLeft(dc, tx, blockTop + nameH / 2, Graphics.FONT_TINY,
-            Theme.fit(dc, Graphics.FONT_TINY, m["name"] as String, textW), focused ? Theme.TEXT : Theme.MUTED);
+            Theme.fit(dc, Graphics.FONT_TINY, s.nameOf(m), textW), focused ? Theme.TEXT : Theme.MUTED);
         Theme.textLeft(dc, tx, blockTop + nameH - 6 + subH / 2, Graphics.FONT_XTINY, Theme.fit(dc, Graphics.FONT_XTINY, line2, textW),
             "sos".equals(status) ? Theme.DANGER : Theme.MUTED);
 
@@ -182,6 +187,9 @@ class FamilyListDelegate extends ScreenDelegate {
         if (list.size() == 0) {
             openMainMenu();
             return;
+        }
+        if (_view.selected >= list.size()) {
+            _view.selected = list.size() - 1; // someone left since the last redraw
         }
         var id = list[_view.selected]["id"] as String;
         WatchUi.pushView(new MemberDetailView(id), new MemberDetailDelegate(id), WatchUi.SLIDE_LEFT);
