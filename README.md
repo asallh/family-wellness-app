@@ -31,6 +31,24 @@ The watch shows who it is and which server it's on, and every request and respon
 
 Only one simulator runs per Mac. Run `./start.sh mom` on one laptop and `./start.sh son` on another, both pointed at the same server: `./start.sh son http://<other-laptop>:3000`.
 
+### On Windows
+
+`start.ps1` does the same thing as `start.sh`. Run it from the repo folder in PowerShell:
+
+```powershell
+.\start.ps1 son http://<other-laptop>:3000
+```
+
+If Windows says running scripts is disabled, bypass the policy for this one run:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\start.ps1 son http://<other-laptop>:3000
+```
+
+It finds the SDK under `%APPDATA%\Garmin\ConnectIQ\Sdks` and the developer key from VS Code's settings. Set `$env:DEVELOPER_KEY = 'C:\path\to\developer_key'` if it can't find the key.
+
+**Finding the other laptop's address:** on a Mac, run `ipconfig getifaddr en0`. On Windows, run `ipconfig` and use the IPv4 address. Both machines must be on the same network. Check the connection with `curl.exe http://<other-laptop>:3000/family` before launching. If macOS asks whether `node` may accept incoming connections, allow it.
+
 ### Fake data from a window (instead of the simulator's Activity menu)
 
 ```bash
