@@ -161,7 +161,6 @@ class CheckinDelegate extends ScreenDelegate {
             return true;
         }
         _view.answered = true;
-        cancelPending();
         _view.onHide();
         WatchUi.popView(WatchUi.SLIDE_DOWN);
         getState().modalClosed();
@@ -174,7 +173,6 @@ class CheckinDelegate extends ScreenDelegate {
             return;
         }
         _view.answered = true;
-        cancelPending();
         _view.onHide();
         WatchUi.popView(WatchUi.SLIDE_DOWN);
         getState().answerCheckin(_view.event, _view.RESPONSES[i] as String);

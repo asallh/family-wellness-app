@@ -1,5 +1,4 @@
 import Toybox.Lang;
-import Toybox.Timer;
 import Toybox.WatchUi;
 
 // Base delegate for screens that use both the START button and taps.
@@ -7,12 +6,13 @@ import Toybox.WatchUi;
 // On a touch screen a tap first fires the Select behaviour, and onTap only
 // runs if onSelect returns false (see BehaviorDelegate in the SDK docs). So a
 // screen that acts in onSelect can't tell a tap on "No" from START on the
-// focused "Yes": every tap answered with the focused button. Here onSelect
-// waits briefly instead. If a tap follows, the tap decides from where it
-// landed; if not, it was the START button and onStart() acts on the focus.
+// focused "Yes": every tap answered with the focused button.
+//
+// Here onSelect always declines, so the SDK passes on the input that caused
+// it: START arrives as onKey(KEY_ENTER) and acts on the focused item, and a
+// tap arrives as onTap and acts on what it landed on. No timer is used
+// (watch apps only get a few, and the poll and screen countdowns use them).
 class ScreenDelegate extends WatchUi.BehaviorDelegate {
-    const TAP_WAIT_MS = 120;
-    private var _pending as Timer.Timer?;
 
     function initialize() {
         BehaviorDelegate.initialize();
@@ -27,28 +27,20 @@ class ScreenDelegate extends WatchUi.BehaviorDelegate {
     }
 
     function onSelect() as Boolean {
-        cancelPending();
-        _pending = new Timer.Timer();
-        _pending.start(method(:firePending), TAP_WAIT_MS, false);
-        return false; // let a tap reach onTap
+        return false; // hand over to onKey (START) or onTap (a tap)
+    }
+
+    function onKey(evt as WatchUi.KeyEvent) as Boolean {
+        if (evt.getKey() == WatchUi.KEY_ENTER) {
+            onStart();
+            return true;
+        }
+        return false;
     }
 
     function onTap(evt as WatchUi.ClickEvent) as Boolean {
-        cancelPending();
         var xy = evt.getCoordinates();
         onTouch(xy[0], xy[1]);
         return true; // a tap never falls back to "pick the focused item"
-    }
-
-    function firePending() as Void {
-        _pending = null;
-        onStart();
-    }
-
-    function cancelPending() as Void {
-        if (_pending != null) {
-            _pending.stop();
-            _pending = null;
-        }
     }
 }
