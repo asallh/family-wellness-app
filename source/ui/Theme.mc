@@ -80,7 +80,6 @@ module Theme {
     function memberColor(id as String?) as Number {
         if ("mom".equals(id)) { return 0xFF55FF; }
         if ("son".equals(id)) { return 0x55FF55; }
-        if ("dad".equals(id)) { return 0x55AAFF; }
         if ("grandpa".equals(id)) { return 0xFFAA55; }
         return 0xAAAAAA;
     }
@@ -88,7 +87,6 @@ module Theme {
     function memberShade(id as String?) as Number {
         if ("mom".equals(id)) { return 0x550055; }
         if ("son".equals(id)) { return 0x005500; }
-        if ("dad".equals(id)) { return 0x000055; }
         if ("grandpa".equals(id)) { return 0x552200; }
         return 0x555555;
     }

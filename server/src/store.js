@@ -24,7 +24,6 @@ const MEMBERS = [
   { id: "mom", name: "Mom" },
   { id: "son", name: "Son" },
   // Seeded: always "online", plausible vitals, never answer check-ins.
-  { id: "dad", name: "Dad", seed: { north: 350, east: -200, hr: 72, spo2: 98, temp: 32.4, alt: 310, battery: 76 } },
   { id: "grandpa", name: "Grandpa", seed: { north: 900, east: 600, hr: 64, spo2: 95, temp: 31.8, alt: 325, battery: 54 } },
 ];
 

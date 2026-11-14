@@ -37,16 +37,16 @@ async function bothWatchesOnline(extra = {}) {
   await post("/members/son/telemetry", { hr: 90, spo2: 99, ...SON });
 }
 
-test("family lists all four members; watches start stale, seeded members are ok", async () => {
+test("family lists all three members; watches start stale, seeded members are ok", async () => {
   const { status, body } = await get("/family");
   assert.equal(status, 200);
-  assert.deepEqual(body.map((m) => m.id), ["mom", "son", "dad", "grandpa"]);
+  assert.deepEqual(body.map((m) => m.id), ["mom", "son", "grandpa"]);
   assert.equal(body.find((m) => m.id === "mom").status, "stale");
-  const dad = body.find((m) => m.id === "dad");
-  assert.equal(dad.status, "ok");
-  assert.equal(dad.seeded, true);
-  assert.ok(dad.hr > 60 && dad.hr < 80);
-  assert.ok(typeof dad.lat === "number");
+  const grandpa = body.find((m) => m.id === "grandpa");
+  assert.equal(grandpa.status, "ok");
+  assert.equal(grandpa.seeded, true);
+  assert.ok(grandpa.hr > 55 && grandpa.hr < 75);
+  assert.ok(typeof grandpa.lat === "number");
 });
 
 test("telemetry updates the member, and they go stale after 30 s of silence", async () => {
@@ -81,9 +81,9 @@ test("a no-fix position (180, 180) is ignored, other fields still saved", async 
 
 test("seeded members are placed around the live watches", async () => {
   await bothWatchesOnline();
-  const dad = await member("dad");
-  // Dad is seeded ~400 m from the watches' midpoint.
-  assert.ok(Math.abs(dad.lat - 38.8578) < 0.01, `dad.lat ${dad.lat}`);
+  const grandpa = await member("grandpa");
+  // Grandpa is seeded ~900 m north of the watches' midpoint.
+  assert.ok(Math.abs(grandpa.lat - 38.8627) < 0.01, `grandpa.lat ${grandpa.lat}`);
 });
 
 test("health alert fires once per crossing and goes to everyone else", async () => {
@@ -115,7 +115,7 @@ test("SOS goes to everyone else with distance; rank only counts live watches", a
   await bothWatchesOnline();
   const r = await post("/members/grandpa/sos", { type: "manual" });
   assert.equal(r.status, 200);
-  assert.equal(r.body.notified, 3);
+  assert.equal(r.body.notified, 2);
 
   const momEv = (await inbox("mom"))[0];
   const sonEv = (await inbox("son"))[0];

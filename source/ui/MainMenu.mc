@@ -68,7 +68,7 @@ class PreviewMenuDelegate extends WatchUi.Menu2InputDelegate {
 
     function onSelect(item as WatchUi.MenuItem) as Void {
         var id = item.getId();
-        var ev = previewEvent("dad", "Dad");
+        var ev = previewEvent("grandpa", "Grandpa");
         if (id == :checkin) {
             ev["type"] = "checkin";
             ev["expiresInSec"] = 30;

@@ -22,7 +22,7 @@ Usage: demo.sh <command> [args]
   move    <member> <lat> <lon>  Set position
   reset                     Clear all events and statuses (run before each demo)
 
-Members: mom, son (watches), dad, grandpa (seeded)
+Members: mom, son (watches), grandpa (seeded)
 Examples:
   demo.sh checkin son mom   # Son checks on Mom
   demo.sh sos grandpa       # Grandpa needs help; everyone else is alerted

@@ -224,7 +224,7 @@ class Tester {
             var id = _testCheckin["eventId"] as String;
             api.post("/events/" + id + "/ack", { "by" => myId, "response" => "ok" }, method(:onSelfTest));
         } else if (_testStep == 4) {
-            var target = myId.equals("dad") ? "grandpa" : "dad";
+            var target = myId.equals("grandpa") ? "mom" : "grandpa";
             api.post("/members/" + target + "/checkin", { "from" => myId }, method(:onSelfTest));
         } else {
             var summary = _testPassed + "/" + _testRun + " passed";

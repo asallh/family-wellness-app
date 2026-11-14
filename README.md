@@ -2,7 +2,7 @@
 
 A family safety network on Garmin watches. Every member sees everyone's heart rate and location, anyone can send "Are you OK?" to anyone, and an SOS or fall alerts the whole family, closest person first.
 
-The two watches are **Mom** and **Son**. **Dad** and **Grandpa** are faked by the server so the family looks full.
+The two watches are **Mom** and **Son**. **Grandpa** is faked by the server so there is a third member to alert and route to.
 
 **The full plan is in [PLAN.md](PLAN.md):** the architecture, the API contract, who owns what, the timeline and the demo script.
 
@@ -55,7 +55,7 @@ It finds the SDK under `%APPDATA%\Garmin\ConnectIQ\Sdks` and the developer key f
 python3 tools/feeder.py
 ```
 
-Pick **Mom** or **Son**, tick the fields you want to fake (heart rate, SpO₂, temperature, altitude, battery, heading, position) and move the sliders. Ticked fields are pinned on the server, so the watch's own sensor readings can't overwrite them. Unticked fields go back to the watch's real readings. The other watch sees the fake values, and health alerts fire as usual.
+Pick **Mom** or **Son** and move a slider (heart rate, SpO₂, temperature, altitude, battery, heading) or type a position. The field ticks itself and goes to the server straight away. Ticked fields are pinned on the server, so the watch's own sensor readings can't overwrite them. Untick a field to hand it back to the watch's real readings. The other watch sees the fake values, and health alerts fire as usual.
 
 - **Presets:** one click for normal, high HR (165), low HR (35) or low SpO₂ (85).
 - **Move 100 m N/S/E/W:** walks the member around, so distances and arrows change.
@@ -63,7 +63,9 @@ Pick **Mom** or **Son**, tick the fields you want to fake (heart rate, SpO₂, t
 - **Events:** send an SOS, a fall or a check-in as the selected member, or reset the server.
 - The table at the bottom shows what the server has, and which fields are pinned.
 
-Use `python3 tools/feeder.py http://<other-laptop>:3000` for a shared server. It only needs Python's standard library, which includes Tkinter.
+- **Connection line:** green when connected, red with a retry count when not. If the server can't be reached, the feeder keeps retrying every 3 s. When it's back (or it restarted, or someone reset it), the feeder sends every member's ticked values again by itself.
+
+Use `python3 tools/feeder.py <other-laptop>:3000` for a shared server (`http://` is added for you), or type the address in the **Server** box and press Return. If that laptop runs an older server without pinning (for example `main`), the connection line says *telemetry only*. Values are then sent as ordinary telemetry, so tick **Keep sending** to stop the watch's own readings from replacing them. The feeder only needs Python's standard library, which includes Tkinter.
 
 ### Fake events from the terminal
 
@@ -87,7 +89,7 @@ Run `./server/demo.sh` with no arguments for every command.
 
 ## API
 
-The base URL is `http://localhost:3000`, and all bodies are JSON. Members are `mom`, `son`, `dad` and `grandpa`.
+The base URL is `http://localhost:3000`, and all bodies are JSON. Members are `mom`, `son` and `grandpa`.
 
 | Method | Path | Body | Returns |
 |---|---|---|---|

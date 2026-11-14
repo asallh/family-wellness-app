@@ -10,5 +10,5 @@ setInterval(() => store.tick(), 1000).unref();
 
 app.listen(port, () => {
   console.log(`Family Wellness server on http://localhost:${port}`);
-  console.log("Members: mom, son (watches) + dad, grandpa (seeded). Set LOG=verbose to log every poll.");
+  console.log("Members: mom, son (watches) + grandpa (seeded). Set LOG=verbose to log every poll.");
 });

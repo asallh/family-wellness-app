@@ -15,14 +15,14 @@ There are **no parent-only or child-only features**. Every watch runs the same a
 - broadcast an SOS, or have a fall broadcast for them, to everyone else
 - receive health alerts about any other member
 
-The demo has to show features working **in both directions** (Dad checks on Kid, *and* Kid checks on Dad).
+The demo has to show features working **in both directions** (Mom checks on Son, *and* Son checks on Mom).
 
 ## Architecture
 
 ```
  ┌───────────────────────────┐                                  ┌───────────────────────────┐
  │ Laptop 1: CIQ simulator   │   POST telemetry every 5 s       │ Laptop 2: CIQ simulator   │
- │ Watch app as "Dad"        │ ──────────────────────────┐  ┌── │ Watch app as "Kid"        │
+ │ Watch app as "Mom"        │ ──────────────────────────┐  ┌── │ Watch app as "Son"        │
  │                           │ ◀── poll inbox / events ─┐ │  │   │                           │
  └───────────────────────────┘                          │ ▼  ▼   └───────────────────────────┘
                                                   ┌─────────────────────┐
@@ -30,7 +30,7 @@ The demo has to show features working **in both directions** (Dad checks on Kid,
                                                   │ in-memory store     │
                                                   │ (localhost or ngrok)│
                                                   └─────────────────────┘
-                                        + "Mom" and "Grandpa" seeded on the server
+                                        + "Grandpa" seeded on the server
 ```
 
 **Key decisions:**
@@ -40,15 +40,15 @@ The demo has to show features working **in both directions** (Dad checks on Kid,
 - **The server is the network.** Watches can't talk to each other directly, so every message goes through the server. It's small: no auth.
 - **No database.** The server keeps each member's latest telemetry and pending events in an in-memory `Map`, which is all the features need. A restart wipes the state, which is fine for a demo (and `/debug/reset` does it on purpose). A database only matters for real accounts, history or multiple families, which are out of scope.
 - **Local mode for dev, shared mode for together.** Each person runs their own server on `localhost:3000` while building alone. Whenever the two simulators need to see each other, and for the demo, both point at **one** server. Separate local servers are separate families. See the [README](README.md) for both setups.
-- **One simulator per laptop, so two machines.** We tested this. The Connect IQ simulator only runs one instance per Mac. A second copy quits immediately, even with its main port moved via `SHELL_SERVER_PORT` and a separate temp folder. **Don't spend hackathon time trying to work around it.** Building and testing two-way features always uses two machines: Dad on one, Kid on the other. A third laptop can add a third live member if you want one.
+- **One simulator per laptop, so two machines.** We tested this. The Connect IQ simulator only runs one instance per Mac. A second copy quits immediately, even with its main port moved via `SHELL_SERVER_PORT` and a separate temp folder. **Don't spend hackathon time trying to work around it.** Building and testing two-way features always uses two machines: Mom on one, Son on the other. A third laptop can add a third live member if you want one.
 - **Pair up to test two-way features.** Most work happens alone in local mode with `demo.sh` playing the other members. When you need a real round trip between two watches (check-in reply, SOS arrow), pair with a teammate. Point both machines at one server, and pick different identities.
 - **One app, many identities.** Both simulators run the *same build*. You pick who you are on the watch itself (see below).
 - **No extra simulator tool.** The simulator's *Simulation* menu sets HR, GPS and heading. The watch app's "Simulate fall" item covers falls. `server/demo.sh` makes the seeded members do things, and is the stage backup.
-- **"Mom" and "Grandpa" are seeded on the server** with fixed locations and plausible HR. They fill out the family list and give "closest member" routing more than one candidate. `demo.sh` can make them send an SOS or a health spike.
+- **"Grandpa" is seeded on the server** with a fixed location and plausible HR. He fills out the family list and gives "closest member" routing two watches to choose between. `demo.sh` can make him send an SOS or a health spike.
 
 ## Identity and server URL
 
-- **Who am I:** on first launch the watch shows a picker (Dad / Mom / Kid / Grandpa) and saves the choice in `Application.Storage`. It can be changed later from the menu.
+- **Who am I:** `./start.sh mom` or `./start.sh son` bakes the persona and server URL into the build. A plain VS Code build uses the menu picker (Mom / Son / Grandpa), saved in `Application.Storage`.
 - **Server URL:** `source/Config.mc` holds two constants. `LOCAL_URL` is `http://localhost:3000`. `SHARED_URL` is an ngrok **free static domain** (`ngrok http --url=<your-domain>.ngrok-free.app 3000`), committed once. A **Menu → Server: Local / Shared** toggle, saved in `Application.Storage`, picks one without editing code. Local is the default.
 - **Simulator + HTTP:** for local mode, untick *Settings → Use Device HTTPS Requirements* in the simulator, so it can call `http://localhost`.
 
@@ -59,7 +59,7 @@ The demo has to show features working **in both directions** (Dad checks on Kid,
 | **Family list** | Every other member with ♥ HR, distance, and a status dot (ok / alert / stale / SOS) | HR, GPS |
 | **Direction to a member** | Pick anyone to get a big arrow pointing at them, with their vitals underneath | GPS + compass |
 | **"Are you OK?" check-in** | From any member's detail screen, choose "Check on them". Their watch vibrates with OK / HELP and a 30 s countdown, and the reply shows on the sender's watch. A HELP reply, or no reply, escalates to an SOS to the whole family. | Vibration |
-| **Emergency SOS broadcast** | Any member can choose SOS from the menu. *Every other* watch vibrates with "Kid needs help, 350 m" and an arrow to them. The closest member sees "(you're closest)". | GPS, vibration |
+| **Emergency SOS broadcast** | Any member can choose SOS from the menu. *Every other* watch vibrates with "Son needs help, 350 m" and an arrow to them. The closest member sees "(you're closest)". | GPS, vibration |
 | **Fall detection** | Free-fall then impact, followed by "Did you fall?" with a 15 s countdown. If nobody cancels, the SOS broadcast goes out automatically. | Accelerometer, barometer |
 | **Health alerts** | When anyone's HR goes above 150 or below 40, or SpO₂ drops below 90, everyone else gets a vibration and an alert. | HR, Pulse Ox |
 | **Vitals on the detail screen** | HR, SpO₂, skin temperature, altitude, battery | HR, Pulse Ox, temperature, barometer |
@@ -81,7 +81,7 @@ All of them are read through the real Connect IQ APIs, and the simulator feeds t
 
 ## API contract (agree on this first, 0:00–0:20)
 
-Member ids and names are hardcoded on the server: `dad` (Dad), `kid` (Kid), plus the seeded `mom` (Mom) and `grandpa` (Grandpa). All bodies are JSON. **Don't rename fields without telling the team.** Keep responses small, because watch memory is tight. Every endpoint works the same for every member.
+Member ids and names are hardcoded on the server: `mom` (Mom) and `son` (Son), plus the seeded `grandpa` (Grandpa). All bodies are JSON. **Don't rename fields without telling the team.** Keep responses small, because watch memory is tight. Every endpoint works the same for every member.
 
 | Method | Path | Body / returns |
 |---|---|---|
@@ -121,12 +121,12 @@ FamilyState (singleton, Person C)
 2. **Family list** (main view): name, ♥ HR, distance, status dot.
 3. **Member detail:** compass arrow drawn with `dc.fillPolygon`. Angle = `bearing(me → them) − myHeading`. Vitals underneath, and a **"Check on them"** action available for *every* member.
 4. **Alert view:** pushed on any `sos`/`fall`/`health` event. Shows who, the distance, "(you're closest)", and an arrow to them. Has an Acknowledge button.
-5. **Check-in prompt:** "Dad is asking: are you OK?" with OK / HELP buttons and a 30 s countdown. **Check-in reply:** "Kid says OK ✅" or "Kid needs HELP".
+5. **Check-in prompt:** "Mom is asking: are you OK?" with OK / HELP buttons and a 30 s countdown. **Check-in reply:** "Son says OK ✅" or "Son needs HELP".
 6. **Menu:** SOS, Change identity, Server: Local / Shared, Simulate fall. The same menu on every watch.
 7. Keep the UI to `dc.drawText` and simple shapes. No custom fonts or layouts.
 
 ### Person B: Server, then integration
-1. 0:20–1:15: Express server in `/server` (`npm start`, port from `PORT` and defaulting to 3000), an in-memory `Map`, every endpoint above, and the seeded `mom` + `grandpa`. Push it early so A and C can run it locally.
+1. 0:20–1:15: Express server in `/server` (`npm start`, port from `PORT` and defaulting to 3000), an in-memory `Map`, every endpoint above, and the seeded `grandpa`. Push it early so A and C can run it locally.
 2. Test every endpoint with `curl`. Write `server/demo.sh` with one-liners to reset state and to make any member (including the seeded ones) check in, SOS, fall or spike their HR.
 3. 1:15–2:30: check-in escalation timer, health threshold events, stale detection. Then host the shared instance (ngrok static domain) so both laptops can connect.
 4. 2:30 onward: integration tester. Drive both simulators through the demo script, in both directions, and log what breaks.
@@ -146,7 +146,7 @@ FamilyState (singleton, Person C)
 | Time | Milestone |
 |---|---|
 | 0:00–0:20 | Agree on the API contract and the `FamilyState` interface. Repo layout: watch app at the repo root (moving it breaks the VS Code Monkey C setup), `/server`. The simulator runs on both laptops. |
-| 0:20–1:30 | Server running locally. One simulator posts telemetry and shows the family list (with seeded Mom and Grandpa). **First end-to-end data flow.** |
+| 0:20–1:30 | Server running locally. One simulator posts telemetry and shows the family list (with seeded Grandpa). **First end-to-end data flow.** |
 | 1:30–2:30 | Member detail with the arrow. Shared server up, and **both simulators see each other**. |
 | 2:30–4:00 | Two-way check-in, SOS broadcast + alert view, health alerts, fall detection + "Simulate fall". |
 | 4:00–5:00 | **Integration only.** Run the full demo script on both laptops, in both directions, and fix whatever breaks. |
@@ -158,14 +158,14 @@ Priority order if time runs short: telemetry → family list → two-way check-i
 
 ## Demo script (about 3 minutes)
 
-Two laptops side by side: Laptop 1 is **Dad's watch** and Laptop 2 is **Kid's watch**. Both are on the shared server. Run `server/demo.sh reset` before you start.
+Two laptops side by side: Laptop 1 is **Mom's watch** and Laptop 2 is **Son's watch**. Both are on the shared server. Run `server/demo.sh reset` before you start.
 
-1. "I worry about my kid walking home from school. My kid worries about me, and about Grandpa, who lives alone. Garmin can connect all of us, in both directions."
-2. Both watches show the family list: everyone's live HR and distance, including Mom and Grandpa.
-3. **Parent → child:** Dad chooses "Check on Kid". Kid's watch vibrates, Kid taps **OK**, and Dad's watch shows "Kid says OK ✅".
-4. **Child → parent:** on Dad's laptop, raise the simulated HR above 150. Kid's watch vibrates with "Dad's heart rate is high (162)". Kid chooses "Check on Dad", and **Dad doesn't answer**. After 30 s it escalates, and Kid gets the SOS with an arrow pointing to Dad.
-5. **Direction:** change Kid's heading in the simulator, and the arrow to Dad swings around with it.
-6. **Fall:** on Kid's watch, choose **Simulate fall**. "Did you fall?" counts down 15 s, then Dad's watch shows "Kid may have fallen, 350 m (you're closest)".
+1. "I worry about my son walking home from school. My son worries about me, and about Grandpa, who lives alone. Garmin can connect all of us, in both directions."
+2. Both watches show the family list: everyone's live HR and distance, including Grandpa.
+3. **Parent → child:** Mom chooses "Check on Son". Son's watch vibrates, Son taps **OK**, and Mom's watch shows "Son says OK ✅".
+4. **Child → parent:** on Mom's laptop, raise the simulated HR above 150. Son's watch vibrates with "Mom's heart rate is high (162)". Son chooses "Check on Mom", and **Mom doesn't answer**. After 30 s it escalates, and Son gets the SOS with an arrow pointing to Mom.
+5. **Direction:** change Son's heading in the simulator, and the arrow to Mom swings around with it.
+6. **Fall:** on Son's watch, choose **Simulate fall**. "Did you fall?" counts down 15 s, then Mom's watch shows "Son may have fallen, 350 m (you're closest)".
 7. **Grandpa** (optional): `demo.sh sos grandpa`. Both watches alert, and only the closer one is marked "(you're closest)".
 8. Close on the sensor list (HR, GPS, compass, accelerometer, barometer, SpO₂, temperature) and what comes next, including running it on a real fēnix 7.
 

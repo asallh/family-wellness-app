@@ -139,16 +139,31 @@ class MemberDetailDelegate extends WatchUi.BehaviorDelegate {
         return true;
     }
 
+    // BACK button (or a swipe right): back to the family list. Handled here
+    // rather than left to the system so it always leaves this screen.
+    function onBack() as Boolean {
+        System.println("detail " + _id + ": BACK");
+        goBack();
+        return true;
+    }
+
     function onTap(evt as WatchUi.ClickEvent) as Boolean {
         var xy = evt.getCoordinates();
-        var w = System.getDeviceSettings().screenWidth;
-        // The back chevron in the top-left.
-        if (xy[1] < w * 22 / 100 && xy[0] < w * 35 / 100) {
-            WatchUi.popView(WatchUi.SLIDE_RIGHT);
+        var settings = System.getDeviceSettings();
+        System.println("detail " + _id + ": tap " + xy[0] + "," + xy[1]);
+        // The back chevron sits top-left of the name. Accept the whole left
+        // part of the title band, since a finger (or mouse) rarely lands on
+        // the 8 px chevron itself.
+        if (xy[1] < settings.screenHeight * 26 / 100 && xy[0] < settings.screenWidth * 45 / 100) {
+            goBack();
         } else {
             openActions();
         }
         return true;
+    }
+
+    private function goBack() as Void {
+        WatchUi.popView(WatchUi.SLIDE_RIGHT);
     }
 
     private function openActions() as Void {
@@ -156,7 +171,7 @@ class MemberDetailDelegate extends WatchUi.BehaviorDelegate {
         var name = m == null ? _id : m["name"] as String;
         var menu = new WatchUi.Menu2({ :title => name });
         menu.addItem(new WatchUi.MenuItem("Check on " + name, "Are you OK?", :checkin, null));
-        menu.addItem(new WatchUi.MenuItem("Back", null, :back, null));
+        menu.addItem(new WatchUi.MenuItem("Back to family", null, :back, null));
         WatchUi.pushView(menu, new MemberActionsDelegate(_id, name), WatchUi.SLIDE_UP);
     }
 }
@@ -173,6 +188,11 @@ class MemberActionsDelegate extends WatchUi.Menu2InputDelegate {
 
     function onSelect(item as WatchUi.MenuItem) as Void {
         WatchUi.popView(WatchUi.SLIDE_DOWN);
+        if (item.getId() == :back) {
+            // "Back to family" leaves the member screen too, not just this menu.
+            WatchUi.popView(WatchUi.SLIDE_RIGHT);
+            return;
+        }
         if (item.getId() == :checkin) {
             var s = getState();
             s.sendCheckin(_id);
