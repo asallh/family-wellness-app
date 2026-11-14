@@ -23,9 +23,10 @@ const MEMBERS = [
   // The two watches (./start.sh mom, ./start.sh son).
   { id: "mom", name: "Mom" },
   { id: "son", name: "Son" },
-  // Seeded: always "online", plausible vitals, never answer check-ins.
-  { id: "dad", name: "Dad", seed: { north: 350, east: -200, hr: 72, spo2: 98, temp: 32.4, alt: 310, battery: 76 } },
-  { id: "grandpa", name: "Grandpa", seed: { north: 900, east: 600, hr: 64, spo2: 95, temp: 31.8, alt: 325, battery: 54 } },
+  // No seeded members now. To fake one, add e.g.
+  // { id: "grandpa", name: "Grandpa", seed: { north: 900, east: 600, hr: 64, spo2: 95, temp: 31.8, alt: 325, battery: 54 } }
+  // Seeded members are always "online", never answer check-ins, and sit
+  // north/east metres from the live watches' midpoint.
 ];
 
 const TELEMETRY_FIELDS = ["hr", "spo2", "temp", "lat", "lon", "heading", "alt", "battery"];
@@ -74,10 +75,11 @@ export class FamilyStore {
 
   // ---- state lifecycle ------------------------------------------------------
 
-  /** Clears events, check-ins, SOS and alert state. Live watches keep their last telemetry. */
+  /** Clears events, check-ins, SOS, alert state and feeder pins. Live watches keep their last telemetry. */
   reset() {
     this.events = new Map(); // eventId -> event (with per-recipient delivery state)
     this.checkins = new Map(); // eventId -> { target, asker, deadline, resolved }
+    this.overrides = new Map(); // memberId -> { field: value } pinned by the data feeder
     for (const m of this.members.values()) {
       m.sosUntil = 0;
       m.breaches = { hrHigh: false, hrLow: false, spo2Low: false };
@@ -172,6 +174,9 @@ export class FamilyStore {
         // Seconds since the last telemetry (small integer, easy on the watch).
         lastSeen: m.seed ? 0 : m.lastSeen == null ? null : Math.round((now - m.lastSeen) / 1000),
         seeded: Boolean(m.seed),
+        // Fields the data feeder has pinned. A watch uses its own pinned
+        // position and heading instead of its sensors.
+        pinned: Object.keys(this.overrides.get(m.id) ?? {}),
       };
     });
   }
@@ -185,8 +190,10 @@ export class FamilyStore {
     }
     // Watches without a GPS fix can report (180, 180); keep the last real position instead.
     const ignorePosition = !validPosition(body.lat, body.lon);
+    const pinned = this.overrides.get(id) ?? {};
     for (const key of TELEMETRY_FIELDS) {
       if (!(key in body)) continue;
+      if (key in pinned) continue; // the data feeder owns this field
       const v = body[key];
       if (v === null) continue; // a sensor with no reading keeps its last value
       if (typeof v !== "number" || !Number.isFinite(v)) throw new HttpError(400, `"${key}" must be a number or null`);
@@ -214,6 +221,50 @@ export class FamilyStore {
       }
       m.breaches[key] = now;
     }
+  }
+
+  // ---- data feeder overrides --------------------------------------------------
+
+  /**
+   * Pins fake values for a member (from tools/feeder.py). A number pins that
+   * field, so the watch's own telemetry can't overwrite it; null releases it.
+   * Pinned values are applied right away as telemetry, so health alerts fire
+   * and a member with no watch running stays live while the feeder sends.
+   */
+  setOverride(id, body) {
+    const m = this.getMember(id);
+    if (body == null || typeof body !== "object" || Array.isArray(body)) {
+      throw new HttpError(400, "Body must be a JSON object");
+    }
+    const pins = { ...(this.overrides.get(id) ?? {}) };
+    if (body.clear === true) for (const k of Object.keys(pins)) delete pins[k];
+    for (const key of TELEMETRY_FIELDS) {
+      if (!(key in body)) continue;
+      const v = body[key];
+      if (v === null) {
+        delete pins[key];
+      } else if (typeof v !== "number" || !Number.isFinite(v)) {
+        throw new HttpError(400, `"${key}" must be a number or null`);
+      } else {
+        pins[key] = v;
+      }
+    }
+    if (("lat" in pins) !== ("lon" in pins)) throw new HttpError(400, "pin lat and lon together");
+    if ("lat" in pins && !validPosition(pins.lat, pins.lon)) throw new HttpError(400, "lat/lon out of range");
+    if (Object.keys(pins).length === 0) this.overrides.delete(id);
+    else this.overrides.set(id, pins);
+
+    // Apply the pins as a telemetry report from this member.
+    for (const [k, v] of Object.entries(pins)) m[k] = v;
+    if (m.seed && "lat" in pins) m.positionOverridden = true;
+    // Any feeder send counts as hearing from the member, except releasing everything.
+    if (!m.seed && body.clear !== true) m.lastSeen = this.now();
+    this.checkHealth(m);
+    return { ok: true, pinned: pins };
+  }
+
+  overridesSnapshot() {
+    return Object.fromEntries(this.overrides);
   }
 
   // ---- events -----------------------------------------------------------------
@@ -316,15 +367,21 @@ export class FamilyStore {
     this.getMember(by);
     const delivery = event.delivery.get(by);
     if (!delivery) throw new HttpError(400, `Event "${eventId}" wasn't sent to "${by}"`);
-    if (!["ok", "help", "seen"].includes(response)) throw new HttpError(400, 'response must be "ok", "help" or "seen"');
+    if (!["ok", "no", "help", "seen"].includes(response)) {
+      throw new HttpError(400, 'response must be "ok", "no", "help" or "seen"');
+    }
     delivery.acked = true;
 
     const checkin = this.checkins.get(eventId);
-    if (event.type === "checkin" && checkin && !checkin.resolved && response !== "seen") {
+    if (event.type === "checkin" && checkin && response !== "seen") {
+      // Too late: it already timed out (and escalated) or was answered.
+      if (checkin.resolved) return { ok: true, late: true };
       checkin.resolved = true;
       const target = this.getMember(checkin.target);
       this.sendTo(this.getMember(checkin.asker), target, { type: "checkin_reply", response });
+      // "no" (not OK) and "help" both alert the whole family.
       if (response === "help") this.raiseSos(target.id, { type: "manual", reason: "checkin_help" });
+      if (response === "no") this.raiseSos(target.id, { type: "manual", reason: "checkin_no" });
     }
     return { ok: true };
   }

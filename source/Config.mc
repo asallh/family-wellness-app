@@ -14,8 +14,8 @@ module Config {
     // Run the API self-test as soon as the app starts (handy with monkeydo).
     const AUTO_SELF_TEST = false;
 
-    // The two watches, then the members the server fakes.
-    const MEMBER_IDS = ["mom", "son", "dad", "grandpa"] as Array<String>;
+    // The family: the two watches.
+    const MEMBER_IDS = ["mom", "son"] as Array<String>;
 
     // Who this watch is and which server it uses, when built by ./start.sh.
     // start.sh replaces these two functions with generated ones (see

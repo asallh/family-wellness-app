@@ -207,6 +207,10 @@ class Tester {
         selfTestNext();
     }
 
+    private function otherMember() as String {
+        return myId.equals("son") ? "mom" : "son";
+    }
+
     private function selfTestNext() as Void {
         if (_testStep == 0) {
             api.post("/members/" + myId + "/telemetry", buildTelemetry(), method(:onSelfTest));
@@ -216,7 +220,7 @@ class Tester {
             api.get("/members/" + myId + "/inbox", method(:onSelfTest));
         } else if (_testStep == 3) {
             if (_testCheckin == null) {
-                System.println("SELF-TEST answer check-in: SKIP (none waiting; try `server/demo.sh checkin grandpa " + myId + "` first)");
+                System.println("SELF-TEST answer check-in: SKIP (none waiting; try `server/demo.sh checkin " + otherMember() + " " + myId + "` first)");
                 _testStep++;
                 selfTestNext();
                 return;
@@ -224,8 +228,8 @@ class Tester {
             var id = _testCheckin["eventId"] as String;
             api.post("/events/" + id + "/ack", { "by" => myId, "response" => "ok" }, method(:onSelfTest));
         } else if (_testStep == 4) {
-            var target = myId.equals("dad") ? "grandpa" : "dad";
-            api.post("/members/" + target + "/checkin", { "from" => myId }, method(:onSelfTest));
+            // This pops a real "Are you OK?" on the other watch.
+            api.post("/members/" + otherMember() + "/checkin", { "from" => myId }, method(:onSelfTest));
         } else {
             var summary = _testPassed + "/" + _testRun + " passed";
             System.println("=== SELF-TEST DONE: " + summary);

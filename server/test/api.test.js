@@ -37,16 +37,13 @@ async function bothWatchesOnline(extra = {}) {
   await post("/members/son/telemetry", { hr: 90, spo2: 99, ...SON });
 }
 
-test("family lists all four members; watches start stale, seeded members are ok", async () => {
+test("family is just Mom and Son, and both start stale", async () => {
   const { status, body } = await get("/family");
   assert.equal(status, 200);
-  assert.deepEqual(body.map((m) => m.id), ["mom", "son", "dad", "grandpa"]);
-  assert.equal(body.find((m) => m.id === "mom").status, "stale");
-  const dad = body.find((m) => m.id === "dad");
-  assert.equal(dad.status, "ok");
-  assert.equal(dad.seeded, true);
-  assert.ok(dad.hr > 60 && dad.hr < 80);
-  assert.ok(typeof dad.lat === "number");
+  assert.deepEqual(body.map((m) => m.id), ["mom", "son"]);
+  assert.deepEqual(body.map((m) => m.status), ["stale", "stale"]);
+  assert.deepEqual(body.map((m) => m.seeded), [false, false]);
+  assert.deepEqual(body.map((m) => m.pinned), [[], []]);
 });
 
 test("telemetry updates the member, and they go stale after 30 s of silence", async () => {
@@ -79,13 +76,6 @@ test("a no-fix position (180, 180) is ignored, other fields still saved", async 
   assert.equal(mom.hr, 75);
 });
 
-test("seeded members are placed around the live watches", async () => {
-  await bothWatchesOnline();
-  const dad = await member("dad");
-  // Dad is seeded ~400 m from the watches' midpoint.
-  assert.ok(Math.abs(dad.lat - 38.8578) < 0.01, `dad.lat ${dad.lat}`);
-});
-
 test("health alert fires once per crossing and goes to everyone else", async () => {
   await bothWatchesOnline();
   await post("/members/mom/telemetry", { hr: 162 });
@@ -111,22 +101,23 @@ test("health alert fires once per crossing and goes to everyone else", async () 
   assert.equal(momInbox.at(-1).reason, "spo2_low");
 });
 
-test("SOS goes to everyone else with distance; rank only counts live watches", async () => {
+test("SOS goes to the other watch with distance and rank, both directions", async () => {
   await bothWatchesOnline();
-  const r = await post("/members/grandpa/sos", { type: "manual" });
+  const r = await post("/members/son/sos", { type: "manual" });
   assert.equal(r.status, 200);
-  assert.equal(r.body.notified, 3);
-
+  assert.equal(r.body.notified, 1);
   const momEv = (await inbox("mom"))[0];
-  const sonEv = (await inbox("son"))[0];
   assert.equal(momEv.type, "sos");
-  assert.equal(momEv.from, "grandpa");
-  assert.ok(momEv.distanceM > 0 && sonEv.distanceM > 0);
-  // Mom is further north, closer to Grandpa (who's seeded north-east).
-  assert.ok(momEv.distanceM < sonEv.distanceM);
+  assert.equal(momEv.from, "son");
+  assert.ok(Math.abs(momEv.distanceM - 500) < 10, `distance ${momEv.distanceM}`);
   assert.equal(momEv.rank, 1);
-  assert.equal(sonEv.rank, 2);
-  assert.equal((await member("grandpa")).status, "sos");
+  assert.equal((await inbox("son")).length, 0, "sender doesn't alert themselves");
+  assert.equal((await member("son")).status, "sos");
+
+  await post("/members/mom/sos", { type: "manual" });
+  const sonEv = (await inbox("son"))[0];
+  assert.equal(sonEv.from, "mom");
+  assert.equal(sonEv.rank, 1);
 });
 
 test("fall from a watch uses the posted position and becomes a fall event", async () => {
@@ -178,24 +169,54 @@ test("check-in answered HELP: reply plus SOS to everyone", async () => {
   assert.equal((await member("son")).status, "sos");
 });
 
-test("unanswered check-in escalates to SOS after 30 s (seeded members never answer)", async () => {
+test("check-in answered NO: a 'no' reply (not OK) plus SOS, never an OK", async () => {
   await bothWatchesOnline();
-  await post("/members/grandpa/checkin", { from: "son" });
+  await post("/members/mom/checkin", { from: "son" });
+  const prompt = (await inbox("mom"))[0];
+  const r = await post(`/events/${prompt.eventId}/ack`, { by: "mom", response: "no" });
+  assert.deepEqual(r.body, { ok: true });
+
+  const types = (await inbox("son")).map((e) => `${e.type}:${e.response ?? e.reason}`);
+  assert.deepEqual(types, ["checkin_reply:no", "sos:checkin_no"]);
+  assert.equal((await member("mom")).status, "sos");
+});
+
+test("unanswered check-in escalates to SOS after 30 s, and a late answer says so", async () => {
+  await bothWatchesOnline();
+  await post("/members/mom/checkin", { from: "son" });
 
   clock += CHECKIN_TIMEOUT_MS - 1000;
   store.tick();
   assert.equal((await inbox("son")).length, 0);
-  // Grandpa's prompt shows 1 s left on the countdown.
-  assert.equal((await inbox("grandpa"))[0].expiresInSec, 1);
+  // Mom's prompt shows 1 s left on the countdown.
+  const prompt = (await inbox("mom"))[0];
+  assert.equal(prompt.expiresInSec, 1);
 
   clock += 2000;
   await bothWatchesOnline(); // keep watches live
   store.tick();
   const ev = (await inbox("son"))[0];
   assert.equal(ev.type, "sos");
-  assert.equal(ev.from, "grandpa");
+  assert.equal(ev.from, "mom");
   assert.equal(ev.reason, "checkin_timeout");
-  assert.equal((await inbox("mom"))[0].type, "sos");
+  assert.equal((await inbox("mom")).length, 0, "the expired prompt leaves Mom's inbox");
+
+  // Mom answers OK after the deadline: the server says it was too late, and
+  // Son gets no misleading "OK" reply.
+  const late = await post(`/events/${prompt.eventId}/ack`, { by: "mom", response: "ok" });
+  assert.deepEqual(late.body, { ok: true, late: true });
+  assert.equal((await inbox("son")).filter((e) => e.type === "checkin_reply").length, 0);
+});
+
+test("only the first answer to a check-in counts", async () => {
+  await bothWatchesOnline();
+  await post("/members/son/checkin", { from: "mom" });
+  const prompt = (await inbox("son"))[0];
+  await post(`/events/${prompt.eventId}/ack`, { by: "son", response: "help" });
+  const second = await post(`/events/${prompt.eventId}/ack`, { by: "son", response: "ok" });
+  assert.equal(second.body.late, true);
+  const replies = (await inbox("mom")).filter((e) => e.type === "checkin_reply");
+  assert.deepEqual(replies.map((e) => e.response), ["help"]);
 });
 
 test("acking 'seen' clears an alert without answering a check-in", async () => {
@@ -234,4 +255,45 @@ test("reset clears events and statuses but keeps watch telemetry", async () => {
   const son = await member("son");
   assert.equal(son.status, "ok");
   assert.equal(son.hr, 90);
+});
+
+test("feeder override pins fields the watch can't overwrite, and fires health alerts", async () => {
+  await bothWatchesOnline();
+  let r = await post("/debug/override/son", { hr: 165, lat: 38.87, lon: -94.8 });
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.body.pinned, { hr: 165, lat: 38.87, lon: -94.8 });
+  assert.equal((await member("son")).status, "alert");
+  assert.equal((await inbox("mom")).filter((e) => e.type === "health").length, 1);
+
+  // The watch keeps reporting real sensors: pinned fields stay, others update.
+  await post("/members/son/telemetry", { hr: 80, spo2: 91, ...SON });
+  let son = await member("son");
+  assert.equal(son.hr, 165);
+  assert.equal(son.lat, 38.87);
+  assert.equal(son.spo2, 91);
+  assert.deepEqual((await get("/debug/override")).body, { son: { hr: 165, lat: 38.87, lon: -94.8 } });
+  // /family says which fields are pinned, so the watch can trust them for itself.
+  assert.deepEqual(son.pinned, ["hr", "lat", "lon"]);
+  assert.deepEqual((await member("mom")).pinned, []);
+
+  // null releases one field; the watch's next report takes over again.
+  await post("/debug/override/son", { hr: null });
+  await post("/members/son/telemetry", { hr: 82 });
+  assert.equal((await member("son")).hr, 82);
+
+  // clear releases everything; reset also clears pins.
+  await post("/debug/override/son", { clear: true });
+  assert.deepEqual((await get("/debug/override")).body, {});
+  await post("/debug/override/mom", { spo2: 85 });
+  await post("/debug/reset");
+  assert.deepEqual((await get("/debug/override")).body, {});
+});
+
+test("feeder keeps a watch with no simulator live, and rejects bad input", async () => {
+  assert.equal((await member("son")).status, "stale");
+  await post("/debug/override/son", { hr: 75, spo2: 98, lat: 38.86, lon: -94.8 });
+  assert.equal((await member("son")).status, "ok");
+  assert.equal((await post("/debug/override/son", { hr: "fast" })).status, 400);
+  assert.equal((await post("/debug/override/mom", { lat: 38.8 })).status, 400);
+  assert.equal((await post("/debug/override/nobody", { hr: 70 })).status, 404);
 });
