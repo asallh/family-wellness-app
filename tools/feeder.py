@@ -3,6 +3,13 @@
 
     python3 tools/feeder.py                          # local server
     python3 tools/feeder.py http://<laptop-ip>:3000  # another laptop's server
+    python3 tools/feeder.py --manual                 # start with nothing sent
+
+Ready for a demo as soon as it opens: Mom and Son both start with every field
+ticked (normal vitals, ~500 m apart) and "Keep sending" on, so both are fed
+every 5 s with no setup. Heart rate drifts by a beat or two on each send so it
+looks live (never across an alert threshold). --manual starts the old way, with
+nothing ticked or sent.
 
 Moving a slider ticks that field and sends it at once. Ticked fields are
 pinned on the server (POST /debug/override/:id), so the watch's own sensor
@@ -17,9 +24,11 @@ pins) it sends every member's ticked values again. Only needs the Python
 standard library.
 """
 
+import argparse
 import json
 import math
 import queue
+import random
 import sys
 import threading
 import tkinter as tk
@@ -47,6 +56,24 @@ FIELDS = [
 
 # Starting positions, ~500 m apart, around the server's default anchor.
 START_POS = {"mom": (38.8599, -94.7995), "son": (38.8554, -94.7995)}
+
+# Demo starting values per member (anything not listed uses FIELDS' default).
+START_VALUES = {
+    "mom": {"hr": 72, "spo2": 98, "temp": 32.4, "alt": 310, "battery": 82, "heading": 0},
+    "son": {"hr": 88, "spo2": 99, "temp": 33.1, "alt": 305, "battery": 64, "heading": 0},
+}
+
+# Heart rate drifts by up to this many bpm on each streamed send.
+HR_DRIFT = 2
+HR_HIGH, HR_LOW = 150, 40  # the server's alert thresholds
+
+
+def drift_hr(base):
+    """A live-looking HR near base that stays on the same side of each threshold."""
+    value = base + random.randint(-HR_DRIFT, HR_DRIFT)
+    if (value > HR_HIGH) != (base > HR_HIGH) or (value < HR_LOW) != (base < HR_LOW):
+        return base
+    return value
 
 PRESETS = {
     "Normal": {"hr": 75, "spo2": 98},
@@ -87,34 +114,39 @@ class Api:
 class MemberFeed:
     """What the feeder holds for one member: values, which are pinned, streaming."""
 
-    def __init__(self, member_id):
+    def __init__(self, member_id, auto=True):
         self.values = {k: d for k, _, _, _, _, d in FIELDS}
+        self.values.update(START_VALUES.get(member_id, {}))
         self.values["lat"], self.values["lon"] = START_POS[member_id]
-        self.pinned = {k: False for k, *_ in FIELDS}
-        self.pinned["pos"] = False
-        self.stream = False
+        # auto: every field ticked and streaming from the start (demo mode).
+        self.pinned = {k: auto for k, *_ in FIELDS}
+        self.pinned["pos"] = auto
+        self.stream = auto
 
     def has_pins(self):
         return any(self.pinned.values())
 
-    def pinned_values(self):
-        return {k: v for k, v in self.body().items() if v is not None}
+    def pinned_values(self, live=False):
+        return {k: v for k, v in self.body(live).items() if v is not None}
 
-    def body(self):
+    def body(self, live=False):
+        """What to send. live=True (the 5 s stream) lets heart rate drift."""
         out = {}
         for k, *_ in FIELDS:
             out[k] = self.values[k] if self.pinned[k] else None
+        if live and out["hr"] is not None:
+            out["hr"] = drift_hr(out["hr"])
         for k in ("lat", "lon"):
             out[k] = self.values[k] if self.pinned["pos"] else None
         return out
 
 
 class Feeder(tk.Tk):
-    def __init__(self, server):
+    def __init__(self, server, auto=True):
         super().__init__()
         self.title("Family Wellness feeder")
         self.resizable(False, False)
-        self.feeds = {mid: MemberFeed(mid) for mid, _ in MEMBERS}
+        self.feeds = {mid: MemberFeed(mid, auto) for mid, _ in MEMBERS}
         self.results = queue.Queue()
         self.loading = False  # true while copying a feed into the widgets
         self.edit_job = None  # pending debounced send after a slider edit
@@ -362,9 +394,9 @@ class Feeder(tk.Tk):
 
         threading.Thread(target=work, daemon=True).start()
 
-    def _send(self, mid):
+    def _send(self, mid, live=False):
         feed = self.feeds[mid]
-        pinned = feed.pinned_values()
+        pinned = feed.pinned_values(live)
         label = f"{feed_name(mid)}: " + (", ".join(f"{k}={v}" for k, v in pinned.items()) or "nothing pinned")
         telemetry = ("POST", f"/members/{mid}/telemetry", pinned)
         if self.can_pin is False:
@@ -373,7 +405,7 @@ class Feeder(tk.Tk):
             else:
                 self.status.set(f"{feed_name(mid)}: nothing ticked to send")
             return
-        self._request("POST", f"/debug/override/{mid}", feed.body(), label,
+        self._request("POST", f"/debug/override/{mid}", feed.body(live), label,
                       fallback=telemetry if pinned else None)
 
     def _resend_all(self, why):
@@ -397,17 +429,15 @@ class Feeder(tk.Tk):
         self._request("POST", f"/members/{target}/checkin", {"from": mid}, f"{mid} asked {target}: are you OK?")
 
     def _reset(self):
-        for feed in self.feeds.values():
-            feed.stream = False
-            for key in feed.pinned:
-                feed.pinned[key] = False
-        self._load_member()
-        self._request("POST", "/debug/reset", {}, "server reset (events, statuses and pins cleared)")
+        # Clears events and statuses for a fresh demo run. The feeder keeps its
+        # values: the next refresh sees the pins are gone and sends them again,
+        # so Mom and Son stay fed. Use "Release all" to stop faking a member.
+        self._request("POST", "/debug/reset", {}, "server reset (events and statuses cleared; still feeding)")
 
     def _stream_tick(self):
         for mid, feed in self.feeds.items():
             if feed.stream:
-                self._send(mid)
+                self._send(mid, live=True)
         self.after(SEND_EVERY_MS, self._stream_tick)
 
     def _server_changed(self, tidy_entry=False):
@@ -527,4 +557,10 @@ def reason(e):
 
 
 if __name__ == "__main__":
-    Feeder(sys.argv[1] if len(sys.argv) > 1 else "http://localhost:3000").mainloop()
+    parser = argparse.ArgumentParser(description="Fake Mom's and Son's vitals and position.")
+    parser.add_argument("server", nargs="?", default="http://localhost:3000",
+                        help="server URL (default http://localhost:3000; http:// is optional)")
+    parser.add_argument("--manual", action="store_true",
+                        help="start with nothing ticked or sent, instead of feeding Mom and Son")
+    args = parser.parse_args()
+    Feeder(args.server, auto=not args.manual).mainloop()

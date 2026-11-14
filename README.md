@@ -55,12 +55,14 @@ It finds the SDK under `%APPDATA%\Garmin\ConnectIQ\Sdks` and the developer key f
 python3 tools/feeder.py
 ```
 
+**It's demo-ready the moment it opens.** Mom and Son both start with every field ticked: normal vitals, and about 500 m apart (Mom north of Son). **Keep sending every 5 s** is on for both, so both watches show live data with no setup, and neither goes stale even without its simulator running. Heart rate drifts by a beat or two on each send so it looks live, but never crosses an alert threshold. Start it with `--manual` to begin with nothing ticked or sent.
+
 Pick **Mom** or **Son** and move a slider (heart rate, SpO₂, temperature, altitude, battery, heading) or type a position. The field ticks itself and goes to the server straight away. Ticked fields are pinned on the server, so the watch's own sensor readings can't overwrite them. Untick a field to hand it back to the watch's real readings. The other watch sees the fake values, and health alerts fire as usual.
 
 - **Presets:** one click for normal, high HR (165), low HR (35) or low SpO₂ (85).
 - **Move 100 m N/S/E/W:** walks the member around, so distances and arrows change.
 - **Keep sending every 5 s:** sends the values over and over. This also keeps a member with no simulator running from going stale, so one Mac can play both Mom and Son.
-- **Events:** send an SOS, a fall or a check-in as the selected member, or reset the server.
+- **Events:** send an SOS, a fall or a check-in as the selected member, or reset the server. **Reset server** clears events and statuses for a fresh run and keeps feeding Mom and Son. Use **Release all** to stop faking a member.
 - The table at the bottom shows what the server has, and which fields are pinned.
 
 - **Connection line:** green when connected, red with a retry count when not. If the server can't be reached, the feeder keeps retrying every 3 s. When it's back (or it restarted, or someone reset it), the feeder sends every member's ticked values again by itself.
