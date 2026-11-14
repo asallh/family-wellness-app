@@ -23,8 +23,10 @@ const MEMBERS = [
   // The two watches (./start.sh mom, ./start.sh son).
   { id: "mom", name: "Mom" },
   { id: "son", name: "Son" },
-  // Seeded: always "online", plausible vitals, never answer check-ins.
-  { id: "grandpa", name: "Grandpa", seed: { north: 900, east: 600, hr: 64, spo2: 95, temp: 31.8, alt: 325, battery: 54 } },
+  // No seeded members now. To fake one, add e.g.
+  // { id: "grandpa", name: "Grandpa", seed: { north: 900, east: 600, hr: 64, spo2: 95, temp: 31.8, alt: 325, battery: 54 } }
+  // Seeded members are always "online", never answer check-ins, and sit
+  // north/east metres from the live watches' midpoint.
 ];
 
 const TELEMETRY_FIELDS = ["hr", "spo2", "temp", "lat", "lon", "heading", "alt", "battery"];
@@ -172,6 +174,9 @@ export class FamilyStore {
         // Seconds since the last telemetry (small integer, easy on the watch).
         lastSeen: m.seed ? 0 : m.lastSeen == null ? null : Math.round((now - m.lastSeen) / 1000),
         seeded: Boolean(m.seed),
+        // Fields the data feeder has pinned. A watch uses its own pinned
+        // position and heading instead of its sensors.
+        pinned: Object.keys(this.overrides.get(m.id) ?? {}),
       };
     });
   }
@@ -362,15 +367,21 @@ export class FamilyStore {
     this.getMember(by);
     const delivery = event.delivery.get(by);
     if (!delivery) throw new HttpError(400, `Event "${eventId}" wasn't sent to "${by}"`);
-    if (!["ok", "help", "seen"].includes(response)) throw new HttpError(400, 'response must be "ok", "help" or "seen"');
+    if (!["ok", "no", "help", "seen"].includes(response)) {
+      throw new HttpError(400, 'response must be "ok", "no", "help" or "seen"');
+    }
     delivery.acked = true;
 
     const checkin = this.checkins.get(eventId);
-    if (event.type === "checkin" && checkin && !checkin.resolved && response !== "seen") {
+    if (event.type === "checkin" && checkin && response !== "seen") {
+      // Too late: it already timed out (and escalated) or was answered.
+      if (checkin.resolved) return { ok: true, late: true };
       checkin.resolved = true;
       const target = this.getMember(checkin.target);
       this.sendTo(this.getMember(checkin.asker), target, { type: "checkin_reply", response });
+      // "no" (not OK) and "help" both alert the whole family.
       if (response === "help") this.raiseSos(target.id, { type: "manual", reason: "checkin_help" });
+      if (response === "no") this.raiseSos(target.id, { type: "manual", reason: "checkin_no" });
     }
     return { ok: true };
   }

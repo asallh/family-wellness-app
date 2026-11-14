@@ -14,7 +14,7 @@ Usage: demo.sh <command> [args]
   family                    Everyone's vitals, distance inputs and status
   inbox   <member>          Unanswered events waiting for a member
   checkin <from> <to>       <from> asks <to> "Are you OK?"
-  answer  <member> ok|help  <member> answers their newest check-in
+  answer  <member> ok|no|help  <member> answers their newest check-in
   sos     <member>          <member> presses SOS
   fall    <member>          A fall is detected on <member>'s watch
   hr      <member> <bpm>    Set heart rate (above 150 or below 40 fires a health alert)
@@ -22,10 +22,10 @@ Usage: demo.sh <command> [args]
   move    <member> <lat> <lon>  Set position
   reset                     Clear all events and statuses (run before each demo)
 
-Members: mom, son (watches), grandpa (seeded)
+Members: mom, son
 Examples:
   demo.sh checkin son mom   # Son checks on Mom
-  demo.sh sos grandpa       # Grandpa needs help; everyone else is alerted
+  demo.sh sos mom           # Mom needs help; Son is alerted
 EOF
 }
 

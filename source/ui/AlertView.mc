@@ -61,6 +61,9 @@ class AlertView extends WatchUi.View {
         if ("checkin_help".equals(reason)) {
             return "Asked for help";
         }
+        if ("checkin_no".equals(reason)) {
+            return "Said they're not OK";
+        }
         if ("checkin_timeout".equals(reason)) {
             return "Didn't answer a check-in";
         }
@@ -103,9 +106,16 @@ class AlertView extends WatchUi.View {
             dc.drawArc(cx, ry, h * (4 + 45 * i / 10) / 100, Graphics.ARC_COUNTER_CLOCKWISE, 30, 150);
         }
         dc.setPenWidth(1);
-        var angle = s.arrowAngle(event["lat"], event["lon"]);
-        Theme.arrow(dc, cx, ry - h * 45 / 1000, h * 45 / 1000, angle == null ? 0.0 : angle);
-        var dist = s.distanceTo(event["lat"], event["lon"]);
+        // Point at where they are now if the family list has them, else where
+        // the alert came from. No arrow at all rather than a made-up north.
+        var m = s.member(event["from"] as String);
+        var lat = m != null && m["lat"] != null ? m["lat"] : event["lat"];
+        var lon = m != null && m["lon"] != null ? m["lon"] : event["lon"];
+        var angle = s.arrowAngle(lat, lon);
+        if (angle != null && s.noArrowReason({ "lat" => lat, "lon" => lon }) == null) {
+            Theme.arrow(dc, cx, ry - h * 45 / 1000, h * 45 / 1000, angle);
+        }
+        var dist = s.distanceTo(lat, lon);
         if (dist == null && event["distanceM"] != null) {
             dist = (event["distanceM"] as Numeric).toFloat();
         }
@@ -118,17 +128,17 @@ class AlertView extends WatchUi.View {
     }
 }
 
-class AlertDelegate extends WatchUi.BehaviorDelegate {
+class AlertDelegate extends ScreenDelegate {
     private var _view as AlertView;
+    private var _done as Boolean = false;
 
     function initialize(view as AlertView) {
-        BehaviorDelegate.initialize();
+        ScreenDelegate.initialize();
         _view = view;
     }
 
-    function onSelect() as Boolean {
+    function onStart() as Void {
         acknowledge();
-        return true;
     }
 
     function onBack() as Boolean {
@@ -146,17 +156,20 @@ class AlertDelegate extends WatchUi.BehaviorDelegate {
         return true;
     }
 
-    function onTap(evt as WatchUi.ClickEvent) as Boolean {
-        var xy = evt.getCoordinates();
+    // Only the Acknowledge button acknowledges a tap; anywhere else does nothing.
+    function onTouch(x as Number, y as Number) as Void {
         var settings = System.getDeviceSettings();
-        if (Theme.inRect(xy[0], xy[1], _view.buttonRect(settings.screenWidth, settings.screenHeight))) {
+        if (Theme.inRect(x, y, _view.buttonRect(settings.screenWidth, settings.screenHeight))) {
             acknowledge();
-            return true;
         }
-        return false;
     }
 
     private function acknowledge() as Void {
+        if (_done) {
+            return;
+        }
+        _done = true;
+        cancelPending();
         var s = getState();
         s.ack(_view.event, "seen");
         _view.onHide();

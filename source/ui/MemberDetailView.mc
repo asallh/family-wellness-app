@@ -111,8 +111,14 @@ class MemberDetailView extends WatchUi.View {
         }
 
         var angle = s.arrowAngle(m["lat"], m["lon"]);
-        if (angle == null) {
-            Theme.text(dc, cx, cy - 6, Graphics.FONT_XTINY, "No GPS fix", Theme.MUTED);
+        var why = s.noArrowReason(m);
+        if (angle == null || why != null) {
+            // No GPS on this watch, no location for them yet, or standing together.
+            Theme.text(dc, cx, cy - 6, Graphics.FONT_XTINY, why == null ? "No GPS fix" : why, Theme.MUTED);
+            if (why != null && why.equals("Right here")) {
+                Theme.text(dc, cx, cy + r * 40 / 100, Graphics.FONT_TINY,
+                    Theme.distance(s.distanceTo(m["lat"], m["lon"])), Theme.TEXT);
+            }
             return;
         }
         // Arrow just above centre, distance under it, both clear of N and S.
@@ -121,17 +127,16 @@ class MemberDetailView extends WatchUi.View {
     }
 }
 
-class MemberDetailDelegate extends WatchUi.BehaviorDelegate {
+class MemberDetailDelegate extends ScreenDelegate {
     private var _id as String;
 
     function initialize(id as String) {
-        BehaviorDelegate.initialize();
+        ScreenDelegate.initialize();
         _id = id;
     }
 
-    function onSelect() as Boolean {
+    function onStart() as Void {
         openActions();
-        return true;
     }
 
     function onMenu() as Boolean {
@@ -147,19 +152,17 @@ class MemberDetailDelegate extends WatchUi.BehaviorDelegate {
         return true;
     }
 
-    function onTap(evt as WatchUi.ClickEvent) as Boolean {
-        var xy = evt.getCoordinates();
+    function onTouch(x as Number, y as Number) as Void {
         var settings = System.getDeviceSettings();
-        System.println("detail " + _id + ": tap " + xy[0] + "," + xy[1]);
+        System.println("detail " + _id + ": tap " + x + "," + y);
         // The back chevron sits top-left of the name. Accept the whole left
         // part of the title band, since a finger (or mouse) rarely lands on
         // the 8 px chevron itself.
-        if (xy[1] < settings.screenHeight * 26 / 100 && xy[0] < settings.screenWidth * 45 / 100) {
+        if (y < settings.screenHeight * 26 / 100 && x < settings.screenWidth * 45 / 100) {
             goBack();
         } else {
             openActions();
         }
-        return true;
     }
 
     private function goBack() as Void {

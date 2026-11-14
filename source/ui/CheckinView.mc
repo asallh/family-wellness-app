@@ -4,13 +4,16 @@ import Toybox.System;
 import Toybox.Timer;
 import Toybox.WatchUi;
 
-// "Mom is asking: are you OK?" with four answers and a countdown ring. Yes and
-// I'm Fine answer OK; No and Need Help ask for help (the server then alerts
-// the whole family). UP/DOWN moves the focus, START picks, or tap a button.
+// "Mom is asking: are you OK?" with four answers and a countdown ring.
+// Yes and I'm Fine answer "ok". No answers "no" (not OK) and Need Help answers
+// "help"; for both, the server alerts the whole family. UP/DOWN moves the
+// focus, START picks, or tap a button.
 class CheckinView extends WatchUi.View {
     const LABELS = ["Yes", "No", "Need Help", "I'm Fine"];
+    const RESPONSES = ["ok", "no", "help", "ok"];
 
     var focus as Number = 0;
+    var answered as Boolean = false; // set once, so only one answer is sent
     var event as Dictionary;
     private var _deadline as Number;
     private var _timer as Timer.Timer?;
@@ -40,7 +43,11 @@ class CheckinView extends WatchUi.View {
     }
 
     function tick() as Void {
+        if (answered) {
+            return;
+        }
         if (secondsLeft() == 0) {
+            answered = true;
             // The server escalates on its own; just tell the wearer.
             onHide();
             WatchUi.popView(WatchUi.SLIDE_DOWN);
@@ -105,71 +112,71 @@ class CheckinView extends WatchUi.View {
     }
 }
 
-class CheckinDelegate extends WatchUi.BehaviorDelegate {
+class CheckinDelegate extends ScreenDelegate {
     private var _view as CheckinView;
 
     function initialize(view as CheckinView) {
-        BehaviorDelegate.initialize();
+        ScreenDelegate.initialize();
         _view = view;
     }
 
-    private function view() as CheckinView {
-        return _view;
-    }
-
     function onNextPage() as Boolean {
-        var v = view();
-        v.focus = (v.focus + 1) % 4;
+        _view.focus = (_view.focus + 1) % 4;
         WatchUi.requestUpdate();
         return true;
     }
 
     function onPreviousPage() as Boolean {
-        var v = view();
-        v.focus = (v.focus + 3) % 4;
+        _view.focus = (_view.focus + 3) % 4;
         WatchUi.requestUpdate();
         return true;
     }
 
-    function onSelect() as Boolean {
-        answer(view().focus);
-        return true;
+    // START answers with the focused button.
+    function onStart() as Void {
+        answer(_view.focus);
+    }
+
+    // A tap answers with the button it landed on. A tap between buttons does
+    // nothing (it used to fall through to the focused "Yes"). The top band
+    // hides the prompt, like BACK.
+    function onTouch(x as Number, y as Number) as Void {
+        var settings = System.getDeviceSettings();
+        var rects = _view.buttons(settings.screenWidth, settings.screenHeight);
+        for (var i = 0; i < rects.size(); i++) {
+            if (Theme.inRect(x, y, rects[i])) {
+                _view.focus = i;
+                answer(i);
+                return;
+            }
+        }
+        if (y < settings.screenHeight * 20 / 100) {
+            onBack();
+        }
     }
 
     // BACK hides the prompt without answering; the server times it out.
     function onBack() as Boolean {
-        view().onHide();
+        if (_view.answered) {
+            return true;
+        }
+        _view.answered = true;
+        cancelPending();
+        _view.onHide();
         WatchUi.popView(WatchUi.SLIDE_DOWN);
         getState().modalClosed();
         return true;
     }
 
-    function onTap(evt as WatchUi.ClickEvent) as Boolean {
-        var xy = evt.getCoordinates();
-        var settings = System.getDeviceSettings();
-        var v = view();
-        var rects = v.buttons(settings.screenWidth, settings.screenHeight);
-        for (var i = 0; i < rects.size(); i++) {
-            if (Theme.inRect(xy[0], xy[1], rects[i])) {
-                v.focus = i;
-                answer(i);
-                return true;
-            }
-        }
-        if (xy[1] < settings.screenHeight * 20 / 100) {
-            return onBack();
-        }
-        return false;
-    }
-
     private function answer(i as Number) as Void {
-        var v = view();
-        var ok = i == 0 || i == 3;
-        var s = getState();
-        s.ack(v.event, ok ? "ok" : "help");
-        v.onHide();
+        // Only the first answer counts (a double press or a late timer).
+        if (_view.answered) {
+            return;
+        }
+        _view.answered = true;
+        cancelPending();
+        _view.onHide();
         WatchUi.popView(WatchUi.SLIDE_DOWN);
-        var name = v.event["fromName"] as String;
-        s.pushMessage(ok, ok ? "Reply sent" : "Help requested", ok ? "Told " + name + " you're OK" : "Family has been alerted");
+        getState().answerCheckin(_view.event, _view.RESPONSES[i] as String);
     }
 }

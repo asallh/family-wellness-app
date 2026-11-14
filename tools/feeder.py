@@ -28,7 +28,7 @@ import urllib.request
 from tkinter import ttk
 
 MEMBERS = [("mom", "Mom"), ("son", "Son")]
-ALL_MEMBERS = ["mom", "son", "grandpa"]
+ALL_MEMBERS = ["mom", "son"]
 SEND_EVERY_MS = 5000
 REFRESH_MS = 2000      # poll /family this often while connected
 RETRY_MS = 3000        # and this often while the server can't be reached

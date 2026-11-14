@@ -2,7 +2,7 @@
 
 A family safety network on Garmin watches. Every member sees everyone's heart rate and location, anyone can send "Are you OK?" to anyone, and an SOS or fall alerts the whole family, closest person first.
 
-The two watches are **Mom** and **Son**. **Grandpa** is faked by the server so there is a third member to alert and route to.
+The family is the two watches, **Mom** and **Son**. Every feature works both ways between them.
 
 **The full plan is in [PLAN.md](PLAN.md):** the architecture, the API contract, who owns what, the timeline and the demo script.
 
@@ -70,11 +70,11 @@ Use `python3 tools/feeder.py <other-laptop>:3000` for a shared server (`http://`
 ### Fake events from the terminal
 
 ```bash
-./server/demo.sh checkin grandpa mom
+./server/demo.sh checkin son mom
 ```
 
 ```bash
-./server/demo.sh sos grandpa
+./server/demo.sh sos son
 ```
 
 ```bash
@@ -89,16 +89,16 @@ Run `./server/demo.sh` with no arguments for every command.
 
 ## API
 
-The base URL is `http://localhost:3000`, and all bodies are JSON. Members are `mom`, `son` and `grandpa`.
+The base URL is `http://localhost:3000`, and all bodies are JSON. Members are `mom` and `son`.
 
 | Method | Path | Body | Returns |
 |---|---|---|---|
 | POST | `/members/:id/telemetry` | `{hr, spo2, temp, lat, lon, heading, alt, battery}`, all optional | `{ok}` |
-| GET | `/family` | | Everyone, including you: `[{id, name, hr, spo2, temp, alt, battery, heading, lat, lon, status, lastSeen, seeded}]` |
+| GET | `/family` | | Everyone, including you: `[{id, name, hr, spo2, temp, alt, battery, heading, lat, lon, status, lastSeen, seeded, pinned}]`. `pinned` lists the fields the data feeder holds, and a watch uses its own pinned position and heading instead of its sensors. |
 | GET | `/members/:id/inbox` | | Unanswered events: `[{eventId, type, from, fromName, lat, lon, distanceM, rank, response, reason, value, ageSec, expiresInSec}]` |
 | POST | `/members/:id/sos` | `{type: "manual" or "fall", lat?, lon?}` | `{ok, eventId, notified}` |
 | POST | `/members/:id/checkin` | `{from}` asks `:id` "Are you OK?" | `{ok, eventId}` |
-| POST | `/events/:eventId/ack` | `{by, response: "ok", "help" or "seen"}` | `{ok}` |
+| POST | `/events/:eventId/ack` | `{by, response: "ok", "no", "help" or "seen"}` | `{ok}`, or `{ok, late: true}` when the check-in had already timed out or been answered |
 | POST | `/debug/override/:id` | `{hr, spo2, temp, lat, lon, heading, alt, battery}`: a number pins that field, `null` releases it, `{clear: true}` releases all | `{ok, pinned}` |
 | GET | `/debug/override` | | Pinned fields per member: `{son: {hr: 165}}` |
 | POST | `/debug/reset` | | `{ok}` clears all events, statuses and pinned fields |
@@ -108,14 +108,14 @@ The base URL is `http://localhost:3000`, and all bodies are JSON. Members are `m
 | `type` | Meaning |
 |---|---|
 | `checkin` | Someone asks "Are you OK?". `expiresInSec` counts down the 30 s you have to answer. |
-| `checkin_reply` | The answer to your check-in. `response` is `ok` or `help`. |
-| `sos` | Someone needs help. `reason` is null for the SOS button, or `checkin_help` / `checkin_timeout`. |
+| `checkin_reply` | The answer to your check-in. `response` is `ok`, `no` (not OK) or `help`. |
+| `sos` | Someone needs help. `reason` is null for the SOS button, or `checkin_no` / `checkin_help` / `checkin_timeout`. |
 | `fall` | A fall was detected. |
 | `health` | Vitals crossed a threshold. `reason` is `hr_high`, `hr_low` or `spo2_low`, and `value` is the reading. |
 
 **Rules:**
 - **Health alerts:** HR above 150 or below 40, or SpO₂ below 90, alerts everyone else once per crossing.
-- **Check-ins:** answering `help`, or not answering within 30 s, turns into an SOS to the whole family.
+- **Check-ins:** on the watch, **Yes** and **I'm Fine** answer `ok`, **No** answers `no` and **Need Help** answers `help`. Answering `no` or `help`, or not answering within 30 s, turns into an SOS to the whole family. Only the first answer counts, and an answer after the 30 s gets `late: true`, so the watch says "Too late to answer" instead of "Reply sent".
 - **Closest member:** `rank: 1` marks the closest live watch, so show "(you're closest)".
 - **Status** is one of:
   - `sos`: raised an SOS in the last 2 minutes

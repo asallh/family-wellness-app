@@ -115,9 +115,15 @@ class FamilyState {
         } else if (type.equals("checkin_reply")) {
             vibrate(1);
             ack(ev, "seen");
-            var ok = "ok".equals(ev["response"]);
+            var response = ev["response"];
             var name = ev["fromName"] as String;
-            pushMessage(ok, ok ? name + " is OK" : name + " needs help", ok ? "Replied to your check-in" : "Family has been alerted");
+            if ("ok".equals(response)) {
+                pushMessage(true, name + " is OK", "Replied to your check-in");
+            } else if ("no".equals(response)) {
+                pushMessage(false, name + " is not OK", "Family has been alerted");
+            } else {
+                pushMessage(false, name + " needs help", "Family has been alerted");
+            }
         } else {
             vibrate(3);
             var alert = new AlertView(ev);
@@ -153,6 +159,42 @@ class FamilyState {
         _tester.api.post("/members/" + myId() + "/sos", body, null);
     }
 
+    // Answers a check-in ("ok", "no" or "help") and confirms only once the
+    // server has it, so the screen never claims a reply that wasn't sent.
+    private var _answer as Dictionary? = null;
+
+    function answerCheckin(ev as Dictionary, response as String) as Void {
+        _answer = { "name" => ev["fromName"], "response" => response };
+        _modalOpen = true; // hold other events until the confirmation shows
+        var id = ev["eventId"] as String;
+        if (id.find("preview") == 0) {
+            onAnswered(200, { "ok" => true });
+            return;
+        }
+        _tester.api.post("/events/" + id + "/ack", { "by" => myId(), "response" => response }, method(:onAnswered));
+    }
+
+    function onAnswered(code as Number, data) as Void {
+        var a = _answer;
+        _answer = null;
+        if (a == null) {
+            return;
+        }
+        var name = a["name"] as String;
+        var response = a["response"] as String;
+        if (code != 200) {
+            pushMessage(false, "Reply not sent", code < 0 ? "No connection to the server" : "Server error " + code);
+        } else if (data instanceof Dictionary && data["late"] == true) {
+            pushMessage(false, "Too late to answer", "Family was already alerted");
+        } else if (response.equals("ok")) {
+            pushMessage(true, "Reply sent", "Told " + name + " you're OK");
+        } else if (response.equals("no")) {
+            pushMessage(false, "Told " + name, "You're not OK. Family alerted");
+        } else {
+            pushMessage(false, "Help requested", "Family has been alerted");
+        }
+    }
+
     // Preview events (from the menu) have no server id, so nothing to ack.
     function ack(ev as Dictionary, response as String) as Void {
         var id = ev["eventId"] as String;
@@ -185,9 +227,23 @@ class FamilyState {
         return null;
     }
 
-    // My GPS fix, or else the position the server has for me (set with
-    // `demo.sh move`), so the arrows work without GPS in the simulator.
+    // True when the data feeder has pinned this field for me on the server.
+    function pinnedForMe(field as String) as Boolean {
+        var mine = _meFromServer;
+        if (mine == null || !(mine["pinned"] instanceof Array)) {
+            return false;
+        }
+        return (mine["pinned"] as Array).indexOf(field) >= 0;
+    }
+
+    // Where I am. A position pinned in the data feeder wins, so my own arrows
+    // and distances match what the other watch sees. Otherwise my GPS fix, or
+    // else the position the server has for me (set with `demo.sh move`).
     function myPosition() as Array<Double>? {
+        var here = _meFromServer;
+        if (pinnedForMe("lat") && here != null && here["lat"] != null && here["lon"] != null) {
+            return [(here["lat"] as Numeric).toDouble(), (here["lon"] as Numeric).toDouble()] as Array<Double>;
+        }
         var info = Position.getInfo();
         if (info.position != null && info.accuracy != Position.QUALITY_NOT_AVAILABLE) {
             var deg = info.position.toDegrees();
@@ -195,25 +251,34 @@ class FamilyState {
                 return deg;
             }
         }
-        var here = _meFromServer;
         if (here != null && here["lat"] != null && here["lon"] != null) {
             return [(here["lat"] as Numeric).toDouble(), (here["lon"] as Numeric).toDouble()] as Array<Double>;
         }
         return null;
     }
 
-    // Which way the watch faces, in degrees clockwise from north.
+    // Which way the watch faces, in degrees clockwise from north. A heading
+    // pinned in the data feeder wins (the simulator's compass is stuck on
+    // north), then the compass, then the GPS course.
     function myHeading() as Float {
-        var info = Sensor.getInfo();
-        var h = info.heading;
+        var mine = _meFromServer;
+        if (pinnedForMe("heading") && mine != null && mine["heading"] != null) {
+            return normalizeDeg((mine["heading"] as Numeric).toFloat());
+        }
+        var h = Sensor.getInfo().heading;
         if (h == null) {
             h = Position.getInfo().heading;
         }
         if (h == null) {
             return 0.0;
         }
-        var deg = Math.toDegrees(h).toFloat();
-        return deg < 0 ? deg + 360.0 : deg;
+        return normalizeDeg(Math.toDegrees(h).toFloat());
+    }
+
+    function normalizeDeg(deg as Float) as Float {
+        while (deg < 0) { deg += 360.0; }
+        while (deg >= 360) { deg -= 360.0; }
+        return deg;
     }
 
     // Metres from me to a lat/lon, or null without positions.
@@ -249,6 +314,21 @@ class FamilyState {
     // Where the arrow should point on screen: the bearing minus my heading.
     function arrowAngle(lat, lon) as Float? {
         var b = bearingTo(lat, lon);
-        return b == null ? null : b - myHeading();
+        return b == null ? null : normalizeDeg(b - myHeading());
+    }
+
+    // Why there's no arrow to a member, or null when there can be one.
+    function noArrowReason(m as Dictionary?) as String? {
+        if (myPosition() == null) {
+            return "No GPS fix";
+        }
+        if (m == null || m["lat"] == null || m["lon"] == null) {
+            return "No location yet";
+        }
+        var d = distanceTo(m["lat"], m["lon"]);
+        if (d != null && d < 10) {
+            return "Right here";
+        }
+        return null;
     }
 }

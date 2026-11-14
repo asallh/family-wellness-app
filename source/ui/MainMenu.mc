@@ -54,6 +54,7 @@ function openPreviewMenu() as Void {
     var menu = new WatchUi.Menu2({ :title => "Preview" });
     menu.addItem(new WatchUi.MenuItem("Check-in", "Are you OK?", :checkin, null));
     menu.addItem(new WatchUi.MenuItem("Reply: OK", "Message received", :replyOk, null));
+    menu.addItem(new WatchUi.MenuItem("Reply: no", "Not OK", :replyNo, null));
     menu.addItem(new WatchUi.MenuItem("Reply: help", "Needs help", :replyHelp, null));
     menu.addItem(new WatchUi.MenuItem("Fall alert", "You're closest", :fall, null));
     menu.addItem(new WatchUi.MenuItem("SOS alert", "No reply", :sos, null));
@@ -68,18 +69,17 @@ class PreviewMenuDelegate extends WatchUi.Menu2InputDelegate {
 
     function onSelect(item as WatchUi.MenuItem) as Void {
         var id = item.getId();
-        var ev = previewEvent("grandpa", "Grandpa");
+        var ev = previewFromOther();
         if (id == :checkin) {
             ev["type"] = "checkin";
             ev["expiresInSec"] = 30;
-        } else if (id == :replyOk || id == :replyHelp) {
+        } else if (id == :replyOk || id == :replyNo || id == :replyHelp) {
             ev["type"] = "checkin_reply";
-            ev["response"] = id == :replyOk ? "ok" : "help";
+            ev["response"] = id == :replyOk ? "ok" : (id == :replyNo ? "no" : "help");
         } else if (id == :fall) {
             ev["type"] = "fall";
             ev["rank"] = 1;
         } else if (id == :sos) {
-            ev = previewEvent("grandpa", "Grandpa");
             ev["type"] = "sos";
             ev["reason"] = "checkin_timeout";
             ev["rank"] = 2;
@@ -90,6 +90,12 @@ class PreviewMenuDelegate extends WatchUi.Menu2InputDelegate {
         }
         getState().showEvent(ev);
     }
+}
+
+// A sample event from the other watch (Son on Mom's watch, Mom on Son's).
+function previewFromOther() as Dictionary {
+    var mine = getState().myId();
+    return mine.equals("son") ? previewEvent("mom", "Mom") : previewEvent("son", "Son");
 }
 
 // A sample event from a member, placed where the server has them (if known).

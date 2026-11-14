@@ -130,11 +130,11 @@ class FamilyListView extends WatchUi.View {
     }
 }
 
-class FamilyListDelegate extends WatchUi.BehaviorDelegate {
+class FamilyListDelegate extends ScreenDelegate {
     private var _view as FamilyListView;
 
     function initialize(view as FamilyListView) {
-        BehaviorDelegate.initialize();
+        ScreenDelegate.initialize();
         _view = view;
     }
 
@@ -146,9 +146,8 @@ class FamilyListDelegate extends WatchUi.BehaviorDelegate {
         return move(-1);
     }
 
-    function onSelect() as Boolean {
+    function onStart() as Void {
         openSelected();
-        return true;
     }
 
     function onMenu() as Boolean {
@@ -156,19 +155,16 @@ class FamilyListDelegate extends WatchUi.BehaviorDelegate {
         return true;
     }
 
-    function onTap(evt as WatchUi.ClickEvent) as Boolean {
-        var xy = evt.getCoordinates();
+    // Tapping the highlighted row opens it; tapping the row above or below
+    // moves the highlight there.
+    function onTouch(x as Number, y as Number) as Void {
         var h = System.getDeviceSettings().screenHeight;
-        var off = _view.rowAt(h, xy[1]);
-        if (off == -99) {
-            return false;
-        }
+        var off = _view.rowAt(h, y);
         if (off == 0) {
             openSelected();
-        } else {
+        } else if (off != -99) {
             move(off);
         }
-        return true;
     }
 
     private function move(by as Number) as Boolean {
