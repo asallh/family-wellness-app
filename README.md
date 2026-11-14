@@ -6,6 +6,29 @@ The family is the two watches, **Mom** and **Son**. Every feature works both way
 
 **The full plan is in [PLAN.md](PLAN.md):** the architecture, the API contract, who owns what, the timeline and the demo script.
 
+## Demo
+
+**You need two machines.** The Connect IQ simulator only runs one instance per Mac, so Mom and Son each need their own laptop. One machine hosts the server; the other points at it.
+
+**Setup (before the audience arrives):**
+
+1. On laptop 1 (Mom + server): `./start.sh mom`
+2. On laptop 2 (Son): `./start.sh son http://<laptop-1>:3000`
+3. Optional: `python3 tools/feeder.py <laptop-1>:3000` for live vitals and positions without fiddling with each simulator's Activity menu
+4. `./server/demo.sh reset` for a clean slate
+
+Both watches should show the other member's live HR and distance. Then run this ~3 minute script:
+
+1. **Pitch:** "I worry about my son walking home. He worries about me too. Garmin connects us both ways."
+2. **Family list:** both watches show each other's live HR and distance.
+3. **Parent → child:** Mom chooses **Check on Son**. Son's watch vibrates; Son taps **OK**; Mom sees "Son says OK".
+4. **Child → parent:** raise Mom's HR above 150 (feeder preset or simulator). Son gets "Mom's heart rate is high". Son chooses **Check on Mom** and Mom **doesn't answer**. After 30 s it escalates; Son gets the SOS with an arrow toward Mom.
+5. **Direction:** change Son's heading; the arrow to Mom swings with it.
+6. **Fall:** on Son, choose **Simulate fall**. After the countdown, Mom sees "Son may have fallen … (you're closest)".
+7. Close on the sensors used (HR, GPS, compass, accelerometer, barometer, SpO₂, temperature).
+
+If a live step fails, use `./server/demo.sh` from a terminal (`checkin`, `sos`, `hr`, `reset`) as backup.
+
 ## Quickstart
 
 You need the Connect IQ SDK (with the `fenix7pro` device), a developer key set in VS Code, and Node 20+.
