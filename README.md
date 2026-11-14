@@ -4,6 +4,8 @@ A family safety network on Garmin watches. Every member sees everyone's heart ra
 
 The two watches are **Mom** and **Son**. **Dad** and **Grandpa** are faked by the server so the family looks full.
 
+**The full plan is in [PLAN.md](PLAN.md):** the architecture, the API contract, who owns what, the timeline and the demo script.
+
 ## Run it
 
 You need the Connect IQ SDK (with the `fenix7pro` device), a developer key set in VS Code, and Node 20+.
@@ -95,3 +97,11 @@ cd server && npm install && npm start
 ```bash
 cd server && npm test
 ```
+
+## FAQ
+
+**Do we need a database?** No. The server keeps the family's latest telemetry and pending events in memory, which is all the features need. Losing state on restart is fine for a demo, and `/debug/reset` does it on purpose. A database only matters once you have real accounts, history or multiple families, which are all out of scope.
+
+## Stretch: physical watch (fēnix 7)
+
+Not part of the main build. Only try this after the feature freeze if the simulator demo is solid. The steps are in [PLAN.md → Stretch: physical watch](PLAN.md#stretch-physical-watch).
