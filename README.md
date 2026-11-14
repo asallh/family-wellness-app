@@ -6,19 +6,22 @@ The family is the two watches, **Mom** and **Son**. Every feature works both way
 
 **The full plan is in [PLAN.md](PLAN.md):** the architecture, the API contract, who owns what, the timeline and the demo script.
 
-## Run it
+## Quickstart
 
 You need the Connect IQ SDK (with the `fenix7pro` device), a developer key set in VS Code, and Node 20+.
 
 ```bash
-./start.sh mom
+./start.sh mom // Mac and Linux
+./start.ps1 mom // Windows
 ```
 
 ```bash
-./start.sh son
+./start.sh son //Mac and Linux
+./start.ps1 son // Windows
 ```
 
 `start.sh` does the following:
+
 1. Starts the server on `localhost:3000` if it isn't running. It stops when you press Ctrl-C.
 2. Builds the watch app with that persona and server baked in.
 3. Opens the simulator and runs the app.
@@ -67,7 +70,7 @@ Pick **Mom** or **Son** and move a slider (heart rate, SpO₂, temperature, alti
 
 - **Connection line:** green when connected, red with a retry count when not. If the server can't be reached, the feeder keeps retrying every 3 s. When it's back (or it restarted, or someone reset it), the feeder sends every member's ticked values again by itself.
 
-Use `python3 tools/feeder.py <other-laptop>:3000` for a shared server (`http://` is added for you), or type the address in the **Server** box and press Return. If that laptop runs an older server without pinning (for example `main`), the connection line says *telemetry only*. Values are then sent as ordinary telemetry, so tick **Keep sending** to stop the watch's own readings from replacing them. The feeder only needs Python's standard library, which includes Tkinter.
+Use `python3 tools/feeder.py <other-laptop>:3000` for a shared server (`http://` is added for you), or type the address in the **Server** box and press Return. If that laptop runs an older server without pinning (for example `main`), the connection line says _telemetry only_. Values are then sent as ordinary telemetry, so tick **Keep sending** to stop the watch's own readings from replacing them. The feeder only needs Python's standard library, which includes Tkinter.
 
 ### Fake events from the terminal
 
@@ -93,29 +96,30 @@ Run `./server/demo.sh` with no arguments for every command.
 
 The base URL is `http://localhost:3000`, and all bodies are JSON. Members are `mom` and `son`.
 
-| Method | Path | Body | Returns |
-|---|---|---|---|
-| POST | `/members/:id/telemetry` | `{hr, spo2, temp, lat, lon, heading, alt, battery}`, all optional | `{ok}` |
-| GET | `/family` | | Everyone, including you: `[{id, name, hr, spo2, temp, alt, battery, heading, lat, lon, status, lastSeen, seeded, pinned}]`. `pinned` lists the fields the data feeder holds, and a watch uses its own pinned position and heading instead of its sensors. |
-| GET | `/members/:id/inbox` | | Unanswered events: `[{eventId, type, from, fromName, lat, lon, distanceM, rank, response, reason, value, ageSec, expiresInSec}]` |
-| POST | `/members/:id/sos` | `{type: "manual" or "fall", lat?, lon?}` | `{ok, eventId, notified}` |
-| POST | `/members/:id/checkin` | `{from}` asks `:id` "Are you OK?" | `{ok, eventId}` |
-| POST | `/events/:eventId/ack` | `{by, response: "ok", "no", "help" or "seen"}` | `{ok}`, or `{ok, late: true}` when the check-in had already timed out or been answered |
-| POST | `/debug/override/:id` | `{hr, spo2, temp, lat, lon, heading, alt, battery}`: a number pins that field, `null` releases it, `{clear: true}` releases all | `{ok, pinned}` |
-| GET | `/debug/override` | | Pinned fields per member: `{son: {hr: 165}}` |
-| POST | `/debug/reset` | | `{ok}` clears all events, statuses and pinned fields |
+| Method | Path                     | Body                                                                                                                            | Returns                                                                                                                                                                                                                                                   |
+| ------ | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| POST   | `/members/:id/telemetry` | `{hr, spo2, temp, lat, lon, heading, alt, battery}`, all optional                                                               | `{ok}`                                                                                                                                                                                                                                                    |
+| GET    | `/family`                |                                                                                                                                 | Everyone, including you: `[{id, name, hr, spo2, temp, alt, battery, heading, lat, lon, status, lastSeen, seeded, pinned}]`. `pinned` lists the fields the data feeder holds, and a watch uses its own pinned position and heading instead of its sensors. |
+| GET    | `/members/:id/inbox`     |                                                                                                                                 | Unanswered events: `[{eventId, type, from, fromName, lat, lon, distanceM, rank, response, reason, value, ageSec, expiresInSec}]`                                                                                                                          |
+| POST   | `/members/:id/sos`       | `{type: "manual" or "fall", lat?, lon?}`                                                                                        | `{ok, eventId, notified}`                                                                                                                                                                                                                                 |
+| POST   | `/members/:id/checkin`   | `{from}` asks `:id` "Are you OK?"                                                                                               | `{ok, eventId}`                                                                                                                                                                                                                                           |
+| POST   | `/events/:eventId/ack`   | `{by, response: "ok", "no", "help" or "seen"}`                                                                                  | `{ok}`, or `{ok, late: true}` when the check-in had already timed out or been answered                                                                                                                                                                    |
+| POST   | `/debug/override/:id`    | `{hr, spo2, temp, lat, lon, heading, alt, battery}`: a number pins that field, `null` releases it, `{clear: true}` releases all | `{ok, pinned}`                                                                                                                                                                                                                                            |
+| GET    | `/debug/override`        |                                                                                                                                 | Pinned fields per member: `{son: {hr: 165}}`                                                                                                                                                                                                              |
+| POST   | `/debug/reset`           |                                                                                                                                 | `{ok}` clears all events, statuses and pinned fields                                                                                                                                                                                                      |
 
 **Event types in the inbox:**
 
-| `type` | Meaning |
-|---|---|
-| `checkin` | Someone asks "Are you OK?". `expiresInSec` counts down the 30 s you have to answer. |
-| `checkin_reply` | The answer to your check-in. `response` is `ok`, `no` (not OK) or `help`. |
-| `sos` | Someone needs help. `reason` is null for the SOS button, or `checkin_no` / `checkin_help` / `checkin_timeout`. |
-| `fall` | A fall was detected. |
-| `health` | Vitals crossed a threshold. `reason` is `hr_high`, `hr_low` or `spo2_low`, and `value` is the reading. |
+| `type`          | Meaning                                                                                                        |
+| --------------- | -------------------------------------------------------------------------------------------------------------- |
+| `checkin`       | Someone asks "Are you OK?". `expiresInSec` counts down the 30 s you have to answer.                            |
+| `checkin_reply` | The answer to your check-in. `response` is `ok`, `no` (not OK) or `help`.                                      |
+| `sos`           | Someone needs help. `reason` is null for the SOS button, or `checkin_no` / `checkin_help` / `checkin_timeout`. |
+| `fall`          | A fall was detected.                                                                                           |
+| `health`        | Vitals crossed a threshold. `reason` is `hr_high`, `hr_low` or `spo2_low`, and `value` is the reading.         |
 
 **Rules:**
+
 - **Health alerts:** HR above 150 or below 40, or SpO₂ below 90, alerts everyone else once per crossing.
 - **Check-ins:** on the watch, **Yes** and **I'm Fine** answer `ok`, **No** answers `no` and **Need Help** answers `help`. Answering `no` or `help`, or not answering within 30 s, turns into an SOS to the whole family. Only the first answer counts, and an answer after the 30 s gets `late: true`, so the watch says "Too late to answer" instead of "Reply sent".
 - **Closest member:** `rank: 1` marks the closest live watch, so show "(you're closest)".
