@@ -20,14 +20,16 @@ class FamilyListView extends WatchUi.View {
         var cx = w / 2;
         Theme.clear(dc);
 
-        Theme.people(dc, cx, h * 9 / 100);
-        Theme.text(dc, cx, h * 19 / 100, Graphics.FONT_SMALL, "Family", Theme.TEXT);
+        // Layout for a 260 px round screen, scaled: icon 18, title 42, rows at
+        // 88 / 142 / 196 (46 tall), page dots 240.
+        Theme.people(dc, cx, h * 7 / 100);
+        Theme.text(dc, cx, h * 16 / 100, Graphics.FONT_SMALL, "Family", Theme.TEXT);
 
         var list = s.members;
         if (list.size() == 0) {
-            Theme.text(dc, cx, h / 2, Graphics.FONT_TINY, s.connected ? "No one else yet" : "Connecting...", Theme.MUTED);
+            Theme.line(dc, h / 2, Graphics.FONT_TINY, s.connected ? "No one else yet" : "Connecting...", Theme.MUTED);
             var detail = s.lastError != null ? s.lastError + " · " + getTester().serverHost() : getTester().serverHost();
-            Theme.text(dc, cx, h * 62 / 100, Graphics.FONT_XTINY, Theme.fit(dc, Graphics.FONT_XTINY, detail, w * 3 / 4), Theme.DIM);
+            Theme.line(dc, h * 61 / 100, Graphics.FONT_XTINY, detail, Theme.DIM);
             return;
         }
         if (selected >= list.size()) {
@@ -36,7 +38,7 @@ class FamilyListView extends WatchUi.View {
 
         // Rows above and below the selected one.
         var rowH = h * 21 / 100;
-        var midY = h * 54 / 100;
+        var midY = h * 545 / 1000;
         for (var off = -1; off <= 1; off++) {
             var i = selected + off;
             if (i >= 0 && i < list.size()) {
@@ -50,14 +52,14 @@ class FamilyListView extends WatchUi.View {
         var x0 = cx - (n - 1) * gap / 2;
         for (var i = 0; i < n; i++) {
             dc.setColor(i == selected ? Theme.TEXT : Theme.DIM, Graphics.COLOR_TRANSPARENT);
-            dc.fillCircle(x0 + i * gap, h * 93 / 100, i == selected ? 4 : 3);
+            dc.fillCircle(x0 + i * gap, h * 92 / 100, i == selected ? 4 : 3);
         }
     }
 
     // Which row a tap at y landed on (-1, 0 or 1 relative to the selection).
     function rowAt(h as Number, y as Number) as Number {
         var rowH = h * 21 / 100;
-        var midY = h * 54 / 100;
+        var midY = h * 545 / 1000;
         if (y < midY - rowH * 3 / 2 || y > midY + rowH * 3 / 2) {
             return -99;
         }
@@ -70,40 +72,61 @@ class FamilyListView extends WatchUi.View {
     private function drawRow(dc as Dc, m as Dictionary, y as Number, focused as Boolean) as Void {
         var s = getState();
         var w = dc.getWidth();
-        var cardH = dc.getHeight() * 19 / 100;
-        var x = w * 6 / 100;
-        var cw = w - 2 * x;
+        var cx = w / 2;
+        var cardH = dc.getHeight() * 175 / 1000;
+
+        // As wide as the circle allows at the card's edge farthest from the
+        // centre, so the top and bottom cards tuck inside the bezel.
+        var top = y - cardH / 2;
+        var bottom = y + cardH / 2;
+        var half = Theme.halfWidth(dc, (top - dc.getHeight() / 2).abs() > (bottom - dc.getHeight() / 2).abs() ? top : bottom) - 6;
+        if (half > w * 44 / 100) {
+            half = w * 44 / 100;
+        }
+        var x = cx - half;
+        var cw = 2 * half;
+
         dc.setColor(Theme.CARD, Theme.CARD);
-        dc.fillRoundedRectangle(x, y - cardH / 2, cw, cardH, cardH / 2);
+        dc.fillRoundedRectangle(x, top, cw, cardH, cardH / 2);
         if (focused) {
             dc.setColor(Theme.ACCENT, Theme.ACCENT);
             dc.setPenWidth(3);
-            dc.drawRoundedRectangle(x - 3, y - cardH / 2 - 3, cw + 6, cardH + 6, cardH / 2 + 3);
+            dc.drawRoundedRectangle(x - 2, top - 2, cw + 4, cardH + 4, cardH / 2 + 2);
             dc.setPenWidth(1);
         }
 
         var id = m["id"] as String;
         var r = cardH * 4 / 10;
-        Theme.avatar(dc, x + cardH / 2 + 4, y, r, id);
+        Theme.avatar(dc, x + cardH / 2 + 1, y, r, id);
 
-        var tx = x + cardH + 12;
-        var textW = cw - cardH - 40;
+        var dotX = x + cw - cardH / 2;
+        var tx = x + cardH + 6;
+        var textW = dotX - 12 - tx;
         var status = m["status"] as String?;
         var hr = m["hr"];
-        var dist = s.distanceTo(m["lat"], m["lon"]);
-        var line2 = (hr == null ? "--" : hr.toString()) + " bpm · " + Theme.distance(dist);
+        var dist = Theme.distance(s.distanceTo(m["lat"], m["lon"]));
+        var hrText = hr == null ? "--" : hr.toString();
+        var line2 = hrText + " bpm · " + dist;
+        if (dc.getTextWidthInPixels(line2, Graphics.FONT_XTINY) > textW) {
+            line2 = hrText + " · " + dist;
+        }
         if ("stale".equals(status)) {
             line2 = "offline";
         } else if ("sos".equals(status)) {
-            line2 = "SOS · " + Theme.distance(dist);
+            line2 = "SOS · " + dist;
         }
-        Theme.textLeft(dc, tx, y - cardH / 5, Graphics.FONT_TINY, Theme.fit(dc, Graphics.FONT_TINY, m["name"] as String, textW), Theme.TEXT);
-        Theme.textLeft(dc, tx, y + cardH / 5, Graphics.FONT_XTINY, Theme.fit(dc, Graphics.FONT_XTINY, line2, textW),
+        var nameH = dc.getFontHeight(Graphics.FONT_TINY);
+        var subH = dc.getFontHeight(Graphics.FONT_XTINY);
+        // Two lines centred as a block on the card.
+        var blockTop = y - (nameH + subH - 6) / 2;
+        Theme.textLeft(dc, tx, blockTop + nameH / 2, Graphics.FONT_TINY,
+            Theme.fit(dc, Graphics.FONT_TINY, m["name"] as String, textW), focused ? Theme.TEXT : Theme.MUTED);
+        Theme.textLeft(dc, tx, blockTop + nameH - 6 + subH / 2, Graphics.FONT_XTINY, Theme.fit(dc, Graphics.FONT_XTINY, line2, textW),
             "sos".equals(status) ? Theme.DANGER : Theme.MUTED);
 
         var dot = Theme.statusColor(status);
         dc.setColor(dot, dot);
-        dc.fillCircle(x + cw - cardH / 2 + 4, y, 7);
+        dc.fillCircle(dotX, y, 6);
     }
 }
 

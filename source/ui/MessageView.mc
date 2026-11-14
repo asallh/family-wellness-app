@@ -50,9 +50,10 @@ class MessageView extends WatchUi.View {
         var h = dc.getHeight();
         var cx = w / 2;
         Theme.clear(dc);
-        Theme.badge(dc, cx, h * 38 / 100, w * 18 / 100, _good);
-        Theme.text(dc, cx, h * 71 / 100, Graphics.FONT_SMALL, Theme.fit(dc, Graphics.FONT_SMALL, _title, w * 85 / 100), Theme.TEXT);
-        Theme.text(dc, cx, h * 82 / 100, Graphics.FONT_XTINY, Theme.fit(dc, Graphics.FONT_XTINY, _subtitle, w * 75 / 100), Theme.MUTED);
+        // Badge centred at 100 (glow 48-152), title 178, subtitle 204.
+        Theme.badge(dc, cx, h * 385 / 1000, w * 16 / 100, _good);
+        Theme.line(dc, h * 685 / 1000, Graphics.FONT_SMALL, _title, Theme.TEXT);
+        Theme.line(dc, h * 785 / 1000, Graphics.FONT_XTINY, _subtitle, Theme.MUTED);
     }
 }
 

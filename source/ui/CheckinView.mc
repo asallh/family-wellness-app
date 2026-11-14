@@ -50,19 +50,22 @@ class CheckinView extends WatchUi.View {
         WatchUi.requestUpdate();
     }
 
-    // Button rectangles [x, y, w, h], in the order of LABELS.
+    // Button rectangles [x, y, w, h], in the order of LABELS. On a 260 px
+    // screen: a wide row at 134-172 and a narrower one at 178-214, so the
+    // lower buttons stay inside the circle.
     function buttons(w as Number, h as Number) as Array<Array<Number>> {
-        var gap = w * 3 / 100;
-        var bw = w * 37 / 100;
-        var bh = h * 16 / 100;
-        var y1 = h * 56 / 100;
+        var gap = w * 25 / 1000;
+        var bw = w * 40 / 100;
+        var bh = h * 145 / 1000;
+        var y1 = h * 515 / 1000;
         var y2 = y1 + bh + gap;
-        var sw = w * 32 / 100;
+        var sw = w * 34 / 100;
+        var sh = h * 14 / 100;
         return [
             [w / 2 - gap / 2 - bw, y1, bw, bh],
             [w / 2 + gap / 2, y1, bw, bh],
-            [w / 2 - gap / 2 - sw, y2, sw, bh * 9 / 10],
-            [w / 2 + gap / 2, y2, sw, bh * 9 / 10]
+            [w / 2 - gap / 2 - sw, y2, sw, sh],
+            [w / 2 + gap / 2, y2, sw, sh]
         ] as Array<Array<Number>>;
     }
 
@@ -87,11 +90,12 @@ class CheckinView extends WatchUi.View {
         }
         dc.setPenWidth(1);
 
-        Theme.chevronLeft(dc, w * 27 / 100, h * 11 / 100, Theme.TEXT);
-        Theme.text(dc, cx, h * 11 / 100, Graphics.FONT_XTINY, "Check-in", Theme.TEXT);
-        Theme.text(dc, cx, h * 25 / 100, Graphics.FONT_SMALL, event["fromName"] as String, Theme.TEXT);
-        Theme.text(dc, cx, h * 37 / 100, Graphics.FONT_TINY, "Are you OK?", Theme.TEXT);
-        Theme.text(dc, cx, h * 47 / 100, Graphics.FONT_XTINY, left + "s to answer", left <= 10 ? Theme.WARN : Theme.MUTED);
+        // Header 28, name 60, question 88, countdown 112 (on a 260 px screen).
+        Theme.chevronLeft(dc, w * 29 / 100, h * 11 / 100, Theme.MUTED);
+        Theme.text(dc, cx, h * 11 / 100, Graphics.FONT_XTINY, "Check-in", Theme.MUTED);
+        Theme.line(dc, h * 23 / 100, Graphics.FONT_SMALL, event["fromName"] as String, Theme.TEXT);
+        Theme.line(dc, h * 34 / 100, Graphics.FONT_TINY, "Are you OK?", Theme.TEXT);
+        Theme.line(dc, h * 43 / 100, Graphics.FONT_XTINY, left + "s to answer", left <= 10 ? Theme.WARN : Theme.MUTED);
 
         var rects = buttons(w, h);
         for (var i = 0; i < rects.size(); i++) {

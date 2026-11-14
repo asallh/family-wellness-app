@@ -47,6 +47,28 @@ module Theme {
         return s.substring(0, n) + "...";
     }
 
+    // Half the width of the round screen at row y: the room either side of the
+    // centre line before the bezel cuts things off.
+    function halfWidth(dc as Dc, y as Numeric) as Number {
+        var r = dc.getWidth() / 2;
+        var dy = (y - dc.getHeight() / 2).abs();
+        if (dy >= r) {
+            return 0;
+        }
+        return Math.sqrt(r * r - dy * dy).toNumber();
+    }
+
+    // Centred text, shortened so its whole line height stays inside the circle.
+    function line(dc as Dc, y as Numeric, font as FontType, s as String, color as Number) as Void {
+        var half = dc.getFontHeight(font) / 2;
+        var room = halfWidth(dc, y - half);
+        var lower = halfWidth(dc, y + half);
+        if (lower < room) {
+            room = lower;
+        }
+        text(dc, dc.getWidth() / 2, y, font, fit(dc, font, s, 2 * room - 16), color);
+    }
+
     function clear(dc as Dc) as Void {
         dc.setColor(BG, BG);
         dc.clear();

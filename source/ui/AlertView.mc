@@ -69,9 +69,9 @@ class AlertView extends WatchUi.View {
 
     // Acknowledge button [x, y, w, h].
     function buttonRect(w as Number, h as Number) as Array<Number> {
-        var bw = w * 56 / 100;
-        var bh = h * 14 / 100;
-        return [(w - bw) / 2, h * 80 / 100, bw, bh] as Array<Number>;
+        var bw = w * 50 / 100;
+        var bh = h * 125 / 1000;
+        return [(w - bw) / 2, h * 76 / 100, bw, bh] as Array<Number>;
     }
 
     function onUpdate(dc as Dc) as Void {
@@ -79,39 +79,37 @@ class AlertView extends WatchUi.View {
         var w = dc.getWidth();
         var h = dc.getHeight();
         var cx = w / 2;
-        var isHealth = "health".equals(event["type"]);
 
         Theme.clear(dc);
-        // Red glow behind the top half.
+        // Layout on a 260 px screen: red glow down to 130, warning 22, title 50,
+        // name 76, detail 98, "closest" 116, arrow + ripples 132-172,
+        // distance 186, Acknowledge 198-230.
         dc.setColor(Theme.DANGER_DK, Theme.DANGER_DK);
-        dc.fillCircle(cx, h * 15 / 100, w * 55 / 100);
+        dc.fillCircle(cx, -h * 4 / 100, h * 52 / 100);
 
-        Theme.warning(dc, cx, h * 10 / 100, 26);
-        Theme.text(dc, cx, h * 23 / 100, Graphics.FONT_SMALL, Theme.fit(dc, Graphics.FONT_SMALL, title(), w * 85 / 100), Theme.TEXT);
-        Theme.text(dc, cx, h * 34 / 100, Graphics.FONT_TINY, event["fromName"] as String, Theme.TEXT);
-
-        var line = event["rank"] == 1 ? "You are the closest member." : detail();
-        Theme.text(dc, cx, h * 43 / 100, Graphics.FONT_XTINY, Theme.fit(dc, Graphics.FONT_XTINY, line, w * 88 / 100),
-            event["rank"] == 1 ? Theme.WARN : Theme.MUTED);
-        if (event["rank"] == 1 && !isHealth) {
-            Theme.text(dc, cx, h * 51 / 100, Graphics.FONT_XTINY, detail(), Theme.MUTED);
+        Theme.warning(dc, cx, h * 85 / 1000, 24);
+        Theme.line(dc, h * 19 / 100, Graphics.FONT_SMALL, title(), Theme.TEXT);
+        Theme.line(dc, h * 29 / 100, Graphics.FONT_TINY, event["fromName"] as String, Theme.TEXT);
+        Theme.line(dc, h * 375 / 1000, Graphics.FONT_XTINY, detail(), Theme.MUTED);
+        if (event["rank"] == 1) {
+            Theme.line(dc, h * 445 / 1000, Graphics.FONT_XTINY, "You are the closest member.", Theme.WARN);
         }
 
-        // Ripples with an arrow pointing at them, and the distance.
-        var ry = h * 72 / 100;
+        // Ripples with an arrow pointing at them, and the distance under it.
+        var ry = h * 66 / 100;
         dc.setColor(Theme.ACCENT_DK, Graphics.COLOR_TRANSPARENT);
         dc.setPenWidth(2);
         for (var i = 1; i <= 3; i++) {
-            dc.drawArc(cx, ry, i * 15 + 10, Graphics.ARC_COUNTER_CLOCKWISE, 25, 155);
+            dc.drawArc(cx, ry, h * (4 + 45 * i / 10) / 100, Graphics.ARC_COUNTER_CLOCKWISE, 30, 150);
         }
         dc.setPenWidth(1);
         var angle = s.arrowAngle(event["lat"], event["lon"]);
-        Theme.arrow(dc, cx, ry - 18, 14, angle == null ? 0.0 : angle);
+        Theme.arrow(dc, cx, ry - h * 45 / 1000, h * 45 / 1000, angle == null ? 0.0 : angle);
         var dist = s.distanceTo(event["lat"], event["lon"]);
         if (dist == null && event["distanceM"] != null) {
             dist = (event["distanceM"] as Numeric).toFloat();
         }
-        Theme.text(dc, cx, ry + 1, Graphics.FONT_XTINY, Theme.distance(dist), Theme.TEXT);
+        Theme.text(dc, cx, h * 715 / 1000, Graphics.FONT_XTINY, Theme.distance(dist), Theme.TEXT);
 
         var b = buttonRect(w, h);
         dc.setColor(Theme.ORANGE, Theme.ORANGE);

@@ -46,33 +46,41 @@ class MemberDetailView extends WatchUi.View {
             return;
         }
 
-        Theme.chevronLeft(dc, w * 21 / 100, h * 11 / 100, Theme.TEXT);
-        Theme.text(dc, cx, h * 10 / 100, Graphics.FONT_SMALL, m["name"] as String, Theme.TEXT);
+        // Layout for a 260 px round screen, scaled to the device:
+        // title 24, compass 46-158, divider 166, icons 180, values 202, labels 223.
+        Theme.chevronLeft(dc, w * 24 / 100, h * 10 / 100, Theme.TEXT);
+        Theme.text(dc, cx, h * 9 / 100, Graphics.FONT_SMALL,
+            Theme.fit(dc, Graphics.FONT_SMALL, m["name"] as String, w * 46 / 100), Theme.TEXT);
 
-        drawCompass(dc, cx, h * 43 / 100, h * 26 / 100, m);
+        drawCompass(dc, cx, h * 39 / 100, h * 215 / 1000, m);
 
-        // Divider and vitals.
+        var divY = h * 64 / 100;
         dc.setColor(Theme.CARD_EDGE, Theme.CARD_EDGE);
-        dc.drawLine(w * 16 / 100, h * 72 / 100, w * 84 / 100, h * 72 / 100);
-        var colY = h * 78 / 100;
-        var gap = w * 23 / 100;
+        dc.drawLine(cx - w * 38 / 100, divY, cx + w * 38 / 100, divY);
+
+        var gap = w * 22 / 100;
+        var iconY = h * 69 / 100;
+        var valY = h * 775 / 1000;
+        var labY = h * 855 / 1000;
         var spo2 = m["spo2"];
         var batt = m["battery"];
         var hr = m["hr"];
-        Theme.heart(dc, cx - gap, colY, 16, Theme.DANGER);
-        Theme.drop(dc, cx, colY, 16, Theme.ACCENT);
-        Theme.battery(dc, cx + gap, colY, 16, batt);
-        var valY = h * 86 / 100;
+        Theme.heart(dc, cx - gap, iconY, 14, Theme.DANGER);
+        Theme.drop(dc, cx, iconY, 14, Theme.ACCENT);
+        Theme.battery(dc, cx + gap, iconY, 14, batt);
         Theme.text(dc, cx - gap, valY, Graphics.FONT_TINY, hr == null ? "--" : hr.toString(), Theme.TEXT);
         Theme.text(dc, cx, valY, Graphics.FONT_TINY, spo2 == null ? "--" : spo2 + "%", Theme.TEXT);
         Theme.text(dc, cx + gap, valY, Graphics.FONT_TINY, batt == null ? "--" : batt + "%", Theme.TEXT);
-        var labY = h * 93 / 100;
         Theme.text(dc, cx - gap, labY, Graphics.FONT_XTINY, "bpm", Theme.MUTED);
         Theme.text(dc, cx, labY, Graphics.FONT_XTINY, "SpO2", Theme.MUTED);
         Theme.text(dc, cx + gap, labY, Graphics.FONT_XTINY, "Batt", Theme.MUTED);
+
+        // Column separators.
         dc.setColor(Theme.CARD_EDGE, Theme.CARD_EDGE);
-        dc.drawLine(cx - gap / 2, h * 75 / 100, cx - gap / 2, h * 92 / 100);
-        dc.drawLine(cx + gap / 2, h * 75 / 100, cx + gap / 2, h * 92 / 100);
+        var sepTop = h * 67 / 100;
+        var sepBottom = h * 87 / 100;
+        dc.drawLine(cx - gap / 2, sepTop, cx - gap / 2, sepBottom);
+        dc.drawLine(cx + gap / 2, sepTop, cx + gap / 2, sepBottom);
     }
 
     private function drawCompass(dc as Dc, cx as Number, cy as Number, r as Number, m as Dictionary) as Void {
@@ -91,14 +99,14 @@ class MemberDetailView extends WatchUi.View {
         dc.setColor(Theme.MUTED, Theme.MUTED);
         for (var d = 0; d < 360; d += 10) {
             var a = (d - heading).toFloat();
-            var inner = d % 30 == 0 ? r - 9 : r - 5;
+            var inner = d % 30 == 0 ? r - 8 : r - 4;
             var p1 = Theme.polar(cx, cy, r - 2, a);
             var p2 = Theme.polar(cx, cy, inner, a);
             dc.drawLine(p1[0], p1[1], p2[0], p2[1]);
         }
         var labels = ["N", "E", "S", "W"] as Array<String>;
         for (var i = 0; i < 4; i++) {
-            var p = Theme.polar(cx, cy, r - 18, (i * 90 - heading).toFloat());
+            var p = Theme.polar(cx, cy, r - 16, (i * 90 - heading).toFloat());
             Theme.text(dc, p[0], p[1], Graphics.FONT_XTINY, labels[i], i == 0 ? Theme.DANGER : Theme.TEXT);
         }
 
@@ -107,8 +115,9 @@ class MemberDetailView extends WatchUi.View {
             Theme.text(dc, cx, cy - 6, Graphics.FONT_XTINY, "No GPS fix", Theme.MUTED);
             return;
         }
-        Theme.arrow(dc, cx, cy - r * 15 / 100, r * 38 / 100, angle);
-        Theme.text(dc, cx, cy + r * 45 / 100, Graphics.FONT_TINY, Theme.distance(s.distanceTo(m["lat"], m["lon"])), Theme.TEXT);
+        // Arrow just above centre, distance under it, both clear of N and S.
+        Theme.arrow(dc, cx, cy - r * 14 / 100, r * 32 / 100, angle);
+        Theme.text(dc, cx, cy + r * 40 / 100, Graphics.FONT_TINY, Theme.distance(s.distanceTo(m["lat"], m["lon"])), Theme.TEXT);
     }
 }
 
