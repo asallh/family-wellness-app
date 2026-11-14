@@ -12,6 +12,17 @@ LOG=verbose npm start   # also log every GET poll (normally only writes are logg
 
 Drive any member from the terminal with [`demo.sh`](demo.sh). Run `./demo.sh` with no arguments for the full list. Point it at the shared server with `FAMILY_API=https://<team-domain>.ngrok-free.app`.
 
+## Testing from the watch
+
+For now, the watch app is an **API tester**. It's a stand-in until the real screens exist, and lives in `source/Tester.mc`, `source/Api.mc` and `source/Config.mc`.
+
+1. Start the server, then in the simulator untick **Settings → Use Device HTTPS Requirements**. Otherwise every request fails with `-1001`.
+2. Run the app (F5 in VS Code, or `monkeydo bin/app.prg fenix7pro`), and press **START** or **MENU** for the tester menu.
+3. **Run self-test** sends telemetry, gets the family and inbox, answers a waiting check-in, and checks on Mom. It prints `PASS`/`FAIL` per step to the console. Run `./server/demo.sh checkin kid dad` first so there's a check-in to answer.
+4. The other menu items fire one request each: auto poll (every 5 s), check on…, answer OK/HELP, ack, SOS, fall, identity, local/shared server, and reset. Each request and response shows in the VS Code Debug Console (or the `monkeydo` output).
+
+Set `Config.AUTO_SELF_TEST = true` to run the self-test on launch with no button presses.
+
 ## Details the watch team should know
 
 These are on top of the field list in PLAN.md. Nothing in the contract was renamed.

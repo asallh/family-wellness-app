@@ -1,6 +1,7 @@
 import Toybox.Lang;
 import Toybox.WatchUi;
 
+// START or MENU opens the API tester menu.
 class family_wellnessDelegate extends WatchUi.BehaviorDelegate {
 
     function initialize() {
@@ -8,7 +9,12 @@ class family_wellnessDelegate extends WatchUi.BehaviorDelegate {
     }
 
     function onMenu() as Boolean {
-        WatchUi.pushView(new Rez.Menus.MainMenu(), new family_wellnessMenuDelegate(), WatchUi.SLIDE_UP);
+        openTesterMenu();
+        return true;
+    }
+
+    function onSelect() as Boolean {
+        openTesterMenu();
         return true;
     }
 

@@ -70,6 +70,15 @@ test("telemetry updates the member, and they go stale after 30 s of silence", as
   assert.equal(dad.lastSeen, 31);
 });
 
+test("a no-fix position (180, 180) is ignored, other fields still saved", async () => {
+  await post("/members/dad/telemetry", { ...DAD });
+  const r = await post("/members/dad/telemetry", { hr: 75, lat: 180, lon: 180 });
+  assert.equal(r.status, 200);
+  const dad = await member("dad");
+  assert.equal(dad.lat, DAD.lat);
+  assert.equal(dad.hr, 75);
+});
+
 test("seeded members are placed around the live watches", async () => {
   await bothWatchesOnline();
   const mom = await member("mom");

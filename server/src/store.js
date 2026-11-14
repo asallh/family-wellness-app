@@ -45,6 +45,12 @@ function offset(anchor, north, east) {
   };
 }
 
+/** True for a real coordinate pair. Missing values count as "nothing to ignore". */
+function validPosition(lat, lon) {
+  if (typeof lat !== "number" || typeof lon !== "number") return true;
+  return Math.abs(lat) <= 90 && Math.abs(lon) < 180;
+}
+
 const round = (v, digits = 0) => (v == null ? null : Number(v.toFixed(digits)));
 
 export class HttpError extends Error {
@@ -176,11 +182,14 @@ export class FamilyStore {
     if (body == null || typeof body !== "object" || Array.isArray(body)) {
       throw new HttpError(400, "Body must be a JSON object");
     }
+    // Watches without a GPS fix can report (180, 180); keep the last real position instead.
+    const ignorePosition = !validPosition(body.lat, body.lon);
     for (const key of TELEMETRY_FIELDS) {
       if (!(key in body)) continue;
       const v = body[key];
       if (v === null) continue; // a sensor with no reading keeps its last value
       if (typeof v !== "number" || !Number.isFinite(v)) throw new HttpError(400, `"${key}" must be a number or null`);
+      if ((key === "lat" || key === "lon") && ignorePosition) continue;
       m[key] = v;
     }
     if (m.seed && ("lat" in body || "lon" in body) && m.lat != null && m.lon != null) m.positionOverridden = true;
@@ -274,9 +283,11 @@ export class FamilyStore {
     const m = this.getMember(id);
     if (lat != null || lon != null) {
       if (typeof lat !== "number" || typeof lon !== "number") throw new HttpError(400, "lat and lon must both be numbers");
-      m.lat = lat;
-      m.lon = lon;
-      if (m.seed) m.positionOverridden = true;
+      if (validPosition(lat, lon)) {
+        m.lat = lat;
+        m.lon = lon;
+        if (m.seed) m.positionOverridden = true;
+      }
     }
     m.sosUntil = this.now() + SOS_STATUS_MS;
     const event = this.broadcast(m, { type: type === "fall" ? "fall" : "sos", ...(reason ? { reason } : {}) });
