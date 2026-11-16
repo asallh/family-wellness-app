@@ -1,4 +1,6 @@
-# Family Wellness
+# Tether - Family Wellness Monitoring Network
+
+🥇1st Place Winner for 2026 Tech Thursday x Garmin Hackathon
 
 A family safety network on Garmin watches. Every member sees everyone's heart rate and location, anyone can send "Are you OK?" to anyone, and an SOS or fall alerts the whole family, closest person first.
 
